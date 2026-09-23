@@ -1,0 +1,17 @@
+﻿node_modules/
+.env
+dist/
+build/
+.DS_Store
+*.log
+coverage/
+.vscode/
+.idea/
+
+# Project author: saurabh -- only frontend & backend are versioned
+docs/
+*.pdf
+*.zip
+opencode.bash
+PROJECT WAD.pdf
+Project.zip
