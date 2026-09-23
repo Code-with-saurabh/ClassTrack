@@ -91,11 +91,19 @@ const getClassRoster = async (facultyId, subjectId) => {
   return Student.find({ $or: combos }).populate('userId', 'name email').lean();
 };
 
-const getAttendanceAnalytics = async (facultyId, subjectId) => {
+const getAttendanceAnalytics = async (facultyId, subjectId, dateFilter = {}) => {
   const faculty = toOid(facultyId);
   const subject = toOid(subjectId);
 
+  const match = { faculty, subject };
+  if (dateFilter.from || dateFilter.to) {
+    match.date = {};
+    if (dateFilter.from) match.date.$gte = dateFilter.from;
+    if (dateFilter.to) match.date.$lte = dateFilter.to;
+  }
+
   const pipeline = [
+    { $match: match },
     { $match: { faculty, subject } },
     {
       $group: {
@@ -119,6 +127,37 @@ const getAttendanceAnalytics = async (facultyId, subjectId) => {
       percentage: stat ? stat.percentage : 0,
     };
   });
+};
+
+const getDailyTrend = async (facultyId, subjectId, dateFilter = {}) => {
+  const faculty = toOid(facultyId);
+  const subject = toOid(subjectId有用ong);
+  const match = { faculty, subject };
+  if (dateFilter.from || dateFilter.to) {
+    match.date = {};
+    if (dateFilter.from) match.date.$gte = dateFilter.from;
+    if (dateFilter.to) match.date.$lte = dateFilter.to;
+  }
+
+  const rows = await Attendance.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: '$date',
+        present: { $sum: { $cond: [{ $eq: ['$status', 'present'] }, 1, 0] } },
+        total: { $sum: 1 },
+      },
+    },
+    { $sort: { _id: 1 } },
+    { $addFields: { percentage: PERCENT } },
+  ]);
+
+  return rows.map((r) => ({
+    date: r._id,
+    present: r.present,
+    total: r.total,
+    percentage: r.percentage,
+  }));
 };
 
 const categoryOf = (p) => {
@@ -185,8 +224,9 @@ module.exports = {
   calculateOverallAttendance,
   getAttendanceAnalytics,
   getClassRoster,
+  getDailyTrend,
   buildStats,
   applyFilter,
   applyThreshold,
-  categoryOf,
+  getDailyTrend,
 };

@@ -247,7 +247,7 @@ exports.getSubjectAttendance = async (req, res) => {
 
 exports.getAttendanceAnalytics = async (req, res) => {
   try {
-    const { subjectId, filter: filterType = 'all' } = req.query;
+    const { subjectId, filter: filterType = 'all', from, to, date } = req.query;
     const subject = objectId(subjectId);
     if (!subject) {
       return res.status(400).json({ success: false, message: 'subjectId is required' });
@@ -261,14 +261,34 @@ exports.getAttendanceAnalytics = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized for this subject' });
     }
 
-    const rows = await attendanceService.getAttendanceAnalytics(faculty._id, subject);
+    let dateFilter = {};
+    if (date) {
+      const single = normalizeDate(date);
+      if (!single) return res.status(400).json({ success: false, message: 'Invalid date' });
+      dateFilter = { from: single, to: single };
+    } else if (from || to) {
+      dateFilter = {};
+      if (from) {
+        const f = normalizeDate(from);
+        if (!f) return res.status(400).json({ success: false, message: 'Invalid from date' });
+        dateFilter.from = f;
+      }
+      if (to) {
+        const t = normalizeDate(to);
+        if (!t) return res.status(400).json({ success: false, message: 'Invalid to date' });
+        dateFilter.to = t;
+      }
+    }
+
+    const rows = await attendanceService.getAttendanceAnalytics(faculty._id, subject, dateFilter);
     const students = attendanceService.applyFilter(rows, filterType);
     const stats = attendanceService.buildStats(rows);
+    const dailyTrend = await attendanceService.getDailyTrend(faculty._id, subject, dateFilter);
     const subjectInfo = await Subject.findById(subject).select('name code semester department faculty').lean();
 
     res.json({
       success: true,
-      data: { students, stats, subject: subjectInfo },
+      data: { students, stats, dailyTrend, subject: subjectInfo },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });

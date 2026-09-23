@@ -26,6 +26,8 @@ const AttendanceAnalytics = () => {
   const [subjectAverages, setSubjectAverages] = useState([]);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [studentDetail, setStudentDetail] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -70,7 +72,13 @@ const AttendanceAnalytics = () => {
   const fetchAnalytics = async (subjectId, filterType) => {
     setAnalyticsLoading(true);
     try {
-      const { data } = await getAttendanceAnalytics({ subjectId, filter: filterType });
+      const { data } = await getAttendanceAnalytics({
+        subjectId,
+        filter: filterType,
+        date: dateFrom === dateTo && dateFrom ? dateFrom : undefined,
+        from: dateFrom && dateFrom !== dateTo ? dateFrom : undefined,
+        to: dateTo && dateFrom !== dateTo ? dateTo : undefined,
+      });
       setAnalytics(data.data);
     } catch (error) {
       console.error('Error fetching analytics:', error);
@@ -120,6 +128,10 @@ const AttendanceAnalytics = () => {
         percentage: s.percentage,
       })),
       sorted: [...(analytics.students || [])].sort((a, b) => b.percentage - a.percentage),
+      dailyTrend: (analytics?.dailyTrend || []).map((d) => ({
+        date: new Date(d.date).toLocaleDateString(),
+        percentage: d.percentage,
+      })),
     };
   }, [analytics]);
 
@@ -254,6 +266,38 @@ const AttendanceAnalytics = () => {
                   <Bar dataKey="percentage" fill="#6366f1" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+            </div>
+
+            <div className="card">
+              <div className="card-header">
+                <h3>Daily Trend</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                  Attendance % per class date inside the selected range
+                </p>
+              </div>
+              {!chartData.dailyTrend || chartData.dailyTrend.length === 0 ? (
+                <div className="empty-state">
+                  <p>No dated attendance records in this range</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <LineChart data={chartData.dailyTrend}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="name" />
+                    <YAxis domain={[0, 100]} />
+                    <Tooltip />
+                    <Line
+                      type="monotone"
+                      dataKey="value"
+                      name="Att. %"
+                      stroke="#8b5cf6"
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
 
             <div className="card">
