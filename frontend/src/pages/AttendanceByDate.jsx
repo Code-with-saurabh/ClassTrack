@@ -55,6 +55,38 @@ const AttendanceByDate = () => {
       <div className="card no-print" style={{ marginBottom: '1.5rem' }}>
         <div className="toolbar-row">
           <div className="form-group" style={{ margin: 0 }}>
+            <label>Quick Pick Date</label>
+            <select
+              value={date}
+              onChange={(e) => e.target.value && setDate(e.target.value)}
+              aria-label="Quick pick a recent date"
+            >
+              <option value="">Pick a recent date...</option>
+              {(() => {
+                const days = [];
+                const today = new Date();
+                for (let i = 0; i < 14; i += 1) {
+                  const d = new Date(today);
+                  d.setDate(d.getDate() - i);
+                  days.push(d);
+                }
+                return days.map((d) => {
+                  const key = d.toISOString().slice(0, 10);
+                  const label = d.toLocaleDateString(undefined, {
+                    weekday: 'short',
+                    day: 'numeric',
+                    month: 'short',
+                  });
+                  return (
+                    <option key={key} value={key}>
+                      {label} ({key})
+                    </option>
+                  );
+                });
+              })()}
+            </select>
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
             <label>Date</label>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </div>

@@ -30,6 +30,8 @@ const AttendanceAnalytics = () => {
   const [dateTo, setDateTo] = useState('');
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [studentDetail, setStudentDetail] = useState(null);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(8);
   const [loading, setLoading] = useState(true);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
