@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import toast from 'react-hot-toast';
 import { getFacultySubjects } from '../services/facultyService';
 import { getAttendanceAnalytics, getStudentAttendance } from '../services/attendanceService';
 import {
@@ -18,6 +19,13 @@ import {
 import { getAttendanceColor } from '../utils/helpers';
 
 const CATEGORY_COLORS = ['#ef4444', '#f59e0b', '#3b82f6', '#10b981'];
+const FILTERS = [
+  { value: 'all', label: 'All Students' },
+  { value: 'below75', label: 'Below 75%' },
+  { value: '75to80', label: '75% - 80%' },
+  { value: '80to90', label: '80% - 90%' },
+  { value: 'above90', label: 'Above 90%' },
+];
 
 const AttendanceAnalytics = () => {
   const [subjects, setSubjects] = useState([]);
@@ -28,24 +36,32 @@ const AttendanceAnalytics = () => {
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [appliedFrom, setAppliedFrom] = useState('');
+  const [appliedTo, setAppliedTo] = useState('');
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [studentDetail, setStudentDetail] = useState(null);
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(8);
+  const [studentLoading, setStudentLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+
+  const getErrorMessage = (error) =>
+    error?.response?.data?.message || 'Something went wrong. Please try again.';
 
   useEffect(() => {
     const fetchSubjects = async () => {
       try {
         const { data } = await getFacultySubjects();
-        setSubjects(data.data);
-        if (data.data?.length) {
-          await loadSubjectAverages(data.data);
-          handleSubjectChange(data.data[0]._id);
+        const subs = data.data || [];
+        setSubjects(subs);
+        if (subs.length) {
+          await loadSubjectAverages(subs);
+          handleSubjectChange(subs[0]._id);
+        } else {
+          toast.error('No subjects are assigned to you yet');
         }
       } catch (error) {
         console.error('Error fetching subjects:', error);
+        toast.error(getErrorMessage(error));
       } finally {
         setLoading(false);
       }
@@ -71,19 +87,23 @@ const AttendanceAnalytics = () => {
     }
   };
 
-  const fetchAnalytics = async (subjectId, filterType) => {
+  const fetchAnalytics = async (subjectId, filterType, { notify = false } = {}) => {
     setAnalyticsLoading(true);
     try {
       const { data } = await getAttendanceAnalytics({
         subjectId,
         filter: filterType,
-        date: dateFrom === dateTo && dateFrom ? dateFrom : undefined,
-        from: dateFrom && dateFrom !== dateTo ? dateFrom : undefined,
-        to: dateTo && dateFrom !== dateTo ? dateTo : undefined,
+        date: appliedFrom && appliedFrom === appliedTo ? appliedFrom : undefined,
+        from: appliedFrom && appliedFrom !== appliedTo ? appliedFrom : undefined,
+        to: appliedTo && appliedFrom !== appliedTo ? appliedTo : undefined,
       });
       setAnalytics(data.data);
+      if (notify) toast.success(`Analytics loaded for ${data.data?.subject?.code || 'subject'}`);
+      return data.data;
     } catch (error) {
       console.error('Error fetching analytics:', error);
+      toast.error(getErrorMessage(error));
+      throw error;
     } finally {
       setAnalyticsLoading(false);
     }
@@ -93,26 +113,60 @@ const AttendanceAnalytics = () => {
     setSelectedSubject(subjectId);
     setSelectedStudent(null);
     setStudentDetail(null);
+    setAnalytics(null);
     if (subjectId) {
-      fetchAnalytics(subjectId, filter);
+      fetchAnalytics(subjectId, filter, { notify: true }).catch(() => {});
     }
   };
 
   const handleFilterChange = (filterType) => {
     setFilter(filterType);
     if (selectedSubject) {
-      fetchAnalytics(selectedSubject, filterType);
+      fetchAnalytics(selectedSubject, filterType).catch(() => {});
+    }
+  };
+
+  const applyDateRange = () => {
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      toast.error('From date cannot be after To date');
+      return;
+    }
+    setAppliedFrom(dateFrom);
+    setAppliedTo(dateTo);
+    if (selectedSubject) {
+      fetchAnalytics(selectedSubject, filter).catch(() => {});
+    }
+  };
+
+  const clearDateRange = () => {
+    setDateFrom('');
+    setDateTo('');
+    setAppliedFrom('');
+    setAppliedTo('');
+    if (selectedSubject) {
+      fetchAnalytics(selectedSubject, filter).catch(() => {});
     }
   };
 
   const handleStudentClick = async (student) => {
     setSelectedStudent(student);
+    setStudentDetail(null);
+    setStudentLoading(true);
     try {
       const { data } = await getStudentAttendance(student.student._id, { subjectId: selectedSubject });
       setStudentDetail(data.data);
     } catch (error) {
       console.error('Error fetching student detail:', error);
+      toast.error(getErrorMessage(error));
+      setSelectedStudent(null);
+    } finally {
+      setStudentLoading(false);
     }
+  };
+
+  const closeModal = () => {
+    setSelectedStudent(null);
+    setStudentDetail(null);
   };
 
   const chartData = useMemo(() => {
@@ -120,16 +174,15 @@ const AttendanceAnalytics = () => {
     const stats = analytics.stats;
     return {
       categoryData: [
-        { name: 'Below 75%', value: stats.categories?.below75 || 0 },
-        { name: '75-80%', value: stats.categories?.['75to80'] || 0 },
-        { name: '80-90%', value: stats.categories?.['80to90'] || 0 },
-        { name: 'Above 90%', value: stats.categories?.above90 || 0 },
+        { name: 'Below 75%', value: stats?.categories?.below75 || 0 },
+        { name: '75-80%', value: stats?.categories?.['75to80'] || 0 },
+        { name: '80-90%', value: stats?.categories?.['80to90'] || 0 },
+        { name: 'Above 90%', value: stats?.categories?.above90 || 0 },
       ],
       studentBars: (analytics.students || []).map((s) => ({
         name: s.student?.rollNumber || 'N/A',
         percentage: s.percentage,
       })),
-      sorted: [...(analytics.students || [])].sort((a, b) => b.percentage - a.percentage),
       dailyTrend: (analytics?.dailyTrend || []).map((d) => ({
         name: new Date(d.date).toLocaleDateString(),
         value: d.percentage,
@@ -137,15 +190,16 @@ const AttendanceAnalytics = () => {
     };
   }, [analytics]);
 
-  const filteredStudents = useMemo(
-    () =>
-      (analytics?.students || []).filter(
-        (s) =>
-          s.student?.userId?.name?.toLowerCase().includes(search.toLowerCase()) ||
-          s.student?.rollNumber?.includes(search)
-      ),
-    [analytics, search]
-  );
+  const filteredStudents = useMemo(() => {
+    const students = analytics?.students || [];
+    const query = search.trim().toLowerCase();
+    if (!query) return students;
+    return students.filter((s) => {
+      const name = (s.student?.userId?.name || '').toLowerCase();
+      const roll = s.student?.rollNumber || '';
+      return name.includes(query) || roll.toLowerCase().includes(query);
+    });
+  }, [analytics, search]);
 
   if (loading) {
     return (
@@ -178,10 +232,60 @@ const AttendanceAnalytics = () => {
               ))}
             </select>
           </div>
+          <div className="form-group">
+            <label>From Date</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label>To Date</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label>&nbsp;</label>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn btn-sm" onClick={applyDateRange} disabled={!selectedSubject}>
+                Apply Range
+              </button>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={clearDateRange}
+                disabled={!selectedSubject}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {analytics && (
+      {!selectedSubject && (
+        <div className="empty-state">
+          <p>Select a subject to view attendance analytics</p>
+        </div>
+      )}
+
+      {selectedSubject && analyticsLoading && !analytics && (
+        <div className="loading-container">
+          <div className="spinner"></div>
+          <p>Loading analytics...</p>
+        </div>
+      )}
+
+      {selectedSubject && !analyticsLoading && (!analytics || !stats) && (
+        <div className="empty-state">
+          <p>No analytics available for this subject</p>
+        </div>
+      )}
+
+      {analytics && stats && (
         <>
           <div className="card-grid" style={{ marginBottom: '1.5rem' }}>
             <div className="stat-card">
@@ -259,15 +363,21 @@ const AttendanceAnalytics = () => {
               <div className="card-header">
                 <h3>Student Attendance</h3>
               </div>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={chartData.studentBars}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" />
-                  <YAxis domain={[0, 100]} />
-                  <Tooltip />
-                  <Bar dataKey="percentage" fill="#6366f1" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {chartData.studentBars.length === 0 ? (
+                <div className="empty-state">
+                  <p>No attendance records yet</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={chartData.studentBars}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="name" />
+                    <YAxis domain={[0, 100]} />
+                    <Tooltip />
+                    <Bar dataKey="percentage" fill="#6366f1" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
 
             <div className="card">
@@ -340,13 +450,7 @@ const AttendanceAnalytics = () => {
             </div>
 
             <div className="filter-buttons" style={{ marginBottom: '1rem' }}>
-              {[
-                { value: 'all', label: 'All Students' },
-                { value: 'below75', label: 'Below 75%' },
-                { value: '75to80', label: '75% - 80%' },
-                { value: '80to90', label: '80% - 90%' },
-                { value: 'above90', label: 'Above 90%' },
-              ].map((f) => (
+              {FILTERS.map((f) => (
                 <button
                   key={f.value}
                   className={`filter-btn ${filter === f.value ? 'active' : ''}`}
@@ -361,7 +465,7 @@ const AttendanceAnalytics = () => {
               <div className="loading-container">
                 <div className="spinner"></div>
               </div>
-            ) : (
+            ) : filteredStudents.length > 0 ? (
               <div className="table-container">
                 <table>
                   <thead>
@@ -378,8 +482,8 @@ const AttendanceAnalytics = () => {
                   <tbody>
                     {filteredStudents.map((item) => (
                       <tr key={item.student?._id}>
-                        <td>{item.student?.rollNumber}</td>
-                        <td>{item.student?.userId?.name}</td>
+                        <td>{item.student?.rollNumber || '—'}</td>
+                        <td>{item.student?.userId?.name || '—'}</td>
                         <td>{item.total}</td>
                         <td>{item.present}</td>
                         <td style={{ fontWeight: 600, color: getAttendanceColor(item.percentage) }}>
@@ -402,76 +506,87 @@ const AttendanceAnalytics = () => {
                   </tbody>
                 </table>
               </div>
+            ) : (
+              <div className="empty-state">
+                <p>{search.trim() ? 'No students match your search' : 'No students in this category'}</p>
+              </div>
             )}
           </div>
         </>
       )}
 
-      {selectedStudent && studentDetail && (
-        <div className="modal-overlay" onClick={() => { setSelectedStudent(null); setStudentDetail(null); }}>
+      {selectedStudent && (
+        <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Student Attendance Detail</h3>
-              <button
-                className="modal-close"
-                onClick={() => { setSelectedStudent(null); setStudentDetail(null); }}
-              >
+              <button className="modal-close" onClick={closeModal}>
                 ×
               </button>
             </div>
 
-            <div style={{ marginBottom: '1rem' }}>
-              <p><strong>Name:</strong> {selectedStudent.student?.userId?.name}</p>
-              <p><strong>Roll No:</strong> {selectedStudent.student?.rollNumber}</p>
-              <p>
-                <strong>Overall Attendance:</strong>{' '}
-                <span style={{ color: getAttendanceColor(studentDetail.percentage) }}>
-                  {studentDetail.percentage}%
-                </span>
-              </p>
-            </div>
-
-            <h4 style={{ marginBottom: '0.75rem' }}>Subject-wise Attendance</h4>
-            {studentDetail.subjectWise?.length ? (
-              studentDetail.subjectWise.map((sub) => (
-                <div key={sub._id} className="modal-row">
-                  <span>{sub.subject?.name || 'Unknown Subject'}</span>
-                  <span style={{ fontWeight: 600, color: getAttendanceColor(sub.percentage) }}>
-                    {sub.percentage}%
-                  </span>
-                </div>
-              ))
+            {studentLoading ? (
+              <div className="loading-container">
+                <div className="spinner"></div>
+              </div>
             ) : (
-              <p style={{ color: 'var(--text-secondary)' }}>No subject-wise data</p>
-            )}
+              studentDetail && (
+                <>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <p><strong>Name:</strong> {selectedStudent.student?.userId?.name}</p>
+                    <p><strong>Roll No:</strong> {selectedStudent.student?.rollNumber}</p>
+                    <p>
+                      <strong>Overall Attendance:</strong>{' '}
+                      <span style={{ color: getAttendanceColor(studentDetail.percentage) }}>
+                        {studentDetail.percentage}%
+                      </span>
+                    </p>
+                  </div>
 
-            <h4 style={{ marginTop: '1rem', marginBottom: '0.75rem' }}>Recent History</h4>
-            <div className="table-container" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Subject</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {studentDetail.attendance?.slice(0, 10).map((record) => (
-                    <tr key={record._id}>
-                      <td>{new Date(record.date).toLocaleDateString()}</td>
-                      <td>{record.subject?.name}</td>
-                      <td>
-                        <span
-                          className={`badge ${record.status === 'present' ? 'badge-success' : 'badge-danger'}`}
-                        >
-                          {record.status}
+                  <h4 style={{ marginBottom: '0.75rem' }}>Subject-wise Attendance</h4>
+                  {studentDetail.subjectWise?.length ? (
+                    studentDetail.subjectWise.map((sub) => (
+                      <div key={sub._id} className="modal-row">
+                        <span>{sub.subject?.name || 'Unknown Subject'}</span>
+                        <span style={{ fontWeight: 600, color: getAttendanceColor(sub.percentage) }}>
+                          {sub.percentage}%
                         </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p style={{ color: 'var(--text-secondary)' }}>No subject-wise data</p>
+                  )}
+
+                  <h4 style={{ marginTop: '1rem', marginBottom: '0.75rem' }}>Recent History</h4>
+                  <div className="table-container" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Subject</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {studentDetail.attendance?.slice(0, 10).map((record) => (
+                          <tr key={record._id}>
+                            <td>{new Date(record.date).toLocaleDateString()}</td>
+                            <td>{record.subject?.name}</td>
+                            <td>
+                              <span
+                                className={`badge ${record.status === 'present' ? 'badge-success' : 'badge-danger'}`}
+                              >
+                                {record.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )
+            )}
           </div>
         </div>
       )}

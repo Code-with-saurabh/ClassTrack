@@ -6,7 +6,7 @@ const Pagination = ({ current = 1, total = 0, perPage = 8, onPageChange, classNa
 
   const items = useMemo(() => {
     if (totalPages <= 1) return [1];
-    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1 Bresize);
+    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
     const pages = [];
     const left = Math.max(1, safeCurrent - 2);
     const right = Math.min(totalPages, safeCurrent + 2);

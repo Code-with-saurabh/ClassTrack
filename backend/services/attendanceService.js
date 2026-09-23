@@ -131,7 +131,7 @@ const getAttendanceAnalytics = async (facultyId, subjectId, dateFilter = {}) => 
 
 const getDailyTrend = async (facultyId, subjectId, dateFilter = {}) => {
   const faculty = toOid(facultyId);
-  const subject = toOid(subjectId有用ong);
+  const subject = toOid(subjectId);
   const match = { faculty, subject };
   if (dateFilter.from || dateFilter.to) {
     match.date = {};
@@ -160,22 +160,18 @@ const getDailyTrend = async (facultyId, subjectId, dateFilter = {}) => {
   }));
 };
 
-const categoryOf = (p) => {
-  if (p < 75) return 'below75';
-  if (p < 80) return '75to80';
-  if (p < 90) return '80to90';
-  return 'above90';
-};
-
 const buildStats = (students) => {
   const totalStudents = students.length;
   const withRecords = students.filter((s) => s.total > 0).length;
+  const withAttendance = students.filter((s) => s.total > 0);
   const avgAttendance =
-    totalStudents > 0
+    withAttendance.length > 0
       ? Math.round(
-          students.reduce((sum, s) => sum + s.percentage, 0) / totalStudents
+          withAttendance.reduce((sum, s) => sum + s.percentage, 0) / withAttendance.length
         )
       : 0;
+  const highest = withAttendance.length > 0 ? Math.max(...withAttendance.map((s) => s.percentage)) : 0;
+  const lowest = withAttendance.length > 0 ? Math.min(...withAttendance.map((s) => s.percentage)) : 0;
   const below75 = students.filter((s) => s.percentage < 75).length;
   const categories = {
     below75,
@@ -187,6 +183,8 @@ const buildStats = (students) => {
     totalStudents,
     withRecords,
     avgAttendance,
+    highest,
+    lowest,
     below75,
     above75: totalStudents - below75,
     categories,
@@ -228,5 +226,4 @@ module.exports = {
   buildStats,
   applyFilter,
   applyThreshold,
-  getDailyTrend,
 };
