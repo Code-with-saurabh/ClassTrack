@@ -131,8 +131,8 @@ const AttendanceAnalytics = () => {
       })),
       sorted: [...(analytics.students || [])].sort((a, b) => b.percentage - a.percentage),
       dailyTrend: (analytics?.dailyTrend || []).map((d) => ({
-        date: new Date(d.date).toLocaleDateString(),
-        percentage: d.percentage,
+        name: new Date(d.date).toLocaleDateString(),
+        value: d.percentage,
       })),
     };
   }, [analytics]);

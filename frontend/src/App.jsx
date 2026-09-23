@@ -15,6 +15,7 @@ import StudentManagement from './pages/StudentManagement';
 import FacultyManagement from './pages/FacultyManagement';
 import SubjectManagement from './pages/SubjectManagement';
 import TimetableManagement from './pages/TimetableManagement';
+import { Toaster } from 'react-hot-toast';
 import Layout from './components/Layout';
 import './App.css';
 
@@ -157,6 +158,7 @@ function App() {
       <Router>
         <AppRoutes />
       </Router>
+      <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
     </AuthProvider>
   );
 }
