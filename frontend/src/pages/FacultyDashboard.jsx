@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { getFacultySubjects } from '../services/facultyService';
 import { getFacultyLectures } from '../services/attendanceService';
 import { getGreeting } from '../utils/helpers';
+import { toastError } from '../utils/toastHelpers';
 
 const FacultyDashboard = () => {
   const { user } = useAuth();
@@ -23,6 +24,7 @@ const FacultyDashboard = () => {
         setLectures(lecturesRes.data.data.lectures);
       } catch (error) {
         console.error('Error fetching faculty data:', error);
+        toastError(error, 'Failed to load faculty dashboard');
       } finally {
         setLoading(false);
       }

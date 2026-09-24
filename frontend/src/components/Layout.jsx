@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
 import {
   getNotifications,
   getUnreadCount,
@@ -8,6 +9,7 @@ import {
   markAllRead,
   formatNotificationTime,
 } from '../services/notificationService';
+import { toastError } from '../utils/toastHelpers';
 
 const NOTIF_ICONS = {
   success: '✅',
@@ -27,7 +29,11 @@ const NotificationBell = () => {
   const refreshCount = () => {
     getUnreadCount()
       .then(({ data }) => setCount(data.data?.count || 0))
-      .catch(() => {});
+      .catch((err) => {
+        if (err?.response?.status !== 401) {
+          // silent-ish: avoid spamming every 45s
+        }
+      });
   };
 
   useEffect(() => {
@@ -55,8 +61,9 @@ const NotificationBell = () => {
         const { data } = await getNotifications({ limit: 20 });
         setItems(data.data || []);
         refreshCount();
-      } catch {
+      } catch (err) {
         setItems([]);
+        toastError(err, 'Failed to load notifications');
       } finally {
         setLoading(false);
       }
@@ -65,18 +72,31 @@ const NotificationBell = () => {
 
   const handleItemClick = async (n) => {
     if (!n.read) {
-      markAsRead(n._id).catch(() => {});
-      setItems((prev) => prev.map((it) => (it._id === n._id ? { ...it, read: true } : it)));
-      setCount((c) => Math.max(0, c - 1));
+      try {
+        await markAsRead(n._id);
+        setItems((prev) => prev.map((it) => (it._id === n._id ? { ...it, read: true } : it)));
+        setCount((c) => Math.max(0, c - 1));
+      } catch (err) {
+        toastError(err, 'Failed to mark notification as read');
+      }
     }
     setOpen(false);
     if (n.link) navigate(n.link);
   };
 
   const handleMarkAll = async () => {
-    await markAllRead().catch(() => {});
-    setCount(0);
-    setItems((prev) => prev.map((it) => ({ ...it, read: true })));
+    if (items.every((n) => n.read) || count === 0) {
+      toast.success('You are already all caught up!');
+      return;
+    }
+    try {
+      await markAllRead();
+      setCount(0);
+      setItems((prev) => prev.map((it) => ({ ...it, read: true })));
+      toast.success('All notifications marked as read.');
+    } catch (err) {
+      toastError(err, 'Failed to mark all as read');
+    }
   };
 
   return (

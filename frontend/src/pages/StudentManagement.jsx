@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getAllStudents, createStudent, updateStudent, deleteStudent } from '../services/studentService';
+import toast from 'react-hot-toast';
+import { toastError, toastValidation } from '../utils/toastHelpers';
 
 const StudentManagement = () => {
   const [students, setStudents] = useState([]);
@@ -18,6 +20,7 @@ const StudentManagement = () => {
       setStudents(data.data);
     } catch (error) {
       console.error('Error fetching students:', error);
+      toastError(error, 'Failed to load students');
     } finally {
       setLoading(false);
     }
@@ -25,13 +28,25 @@ const StudentManagement = () => {
 
   useEffect(() => { fetchStudents(); }, []);
 
+  const validateForm = () => {
+    if (!formData.name.trim()) { toastValidation('Name is required.'); return false; }
+    if (!/^\S+@\S+\.\S+$/.test(formData.email.trim())) { toastValidation('A valid email is required.'); return false; }
+    if (!editingStudent && formData.password.length < 6) { toastValidation('Password must be at least 6 characters.'); return false; }
+    if (!formData.rollNumber.trim()) { toastValidation('Roll number is required.'); return false; }
+    if (formData.semester < 1 || formData.semester > 8) { toastValidation('Semester must be between 1 and 8.'); return false; }
+    return true;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!validateForm()) return;
     try {
       if (editingStudent) {
         await updateStudent(editingStudent._id, formData);
+        toast.success('Student updated successfully.');
       } else {
         await createStudent(formData);
+        toast.success('Student created successfully.');
       }
       setShowModal(false);
       setEditingStudent(null);
@@ -39,6 +54,7 @@ const StudentManagement = () => {
       fetchStudents();
     } catch (error) {
       console.error('Error saving student:', error);
+      toastError(error, 'Failed to save student');
     }
   };
 
@@ -61,10 +77,14 @@ const StudentManagement = () => {
     if (window.confirm('Are you sure you want to delete this student?')) {
       try {
         await deleteStudent(id);
+        toast.success('Student deleted successfully.');
         fetchStudents();
       } catch (error) {
         console.error('Error deleting student:', error);
+        toastError(error, 'Failed to delete student');
       }
+    } else {
+      toastValidation('Delete cancelled.');
     }
   };
 

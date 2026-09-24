@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { getFacultySubjects } from '../services/facultyService';
 import { getAttendanceAnalytics } from '../services/attendanceService';
 import { createMarks } from '../services/marksService';
+import toast from 'react-hot-toast';
+import { toastError, toastSuccess, toastValidation, getApiErrorMessage } from '../utils/toastHelpers';
 
 const MarksEntry = () => {
   const [subjects, setSubjects] = useState([]);
@@ -21,6 +23,7 @@ const MarksEntry = () => {
         setSubjects(data.data);
       } catch (error) {
         console.error('Error fetching subjects:', error);
+        toastError(error, 'Failed to load subjects');
       } finally {
         setLoading(false);
       }
@@ -30,49 +33,81 @@ const MarksEntry = () => {
 
   const handleSubjectChange = async (subjectId) => {
     setSelectedSubject(subjectId);
+    if (!subjectId) {
+      setStudents([]);
+      setMarksData({});
+      return;
+    }
     try {
       const { data } = await getAttendanceAnalytics({ subjectId, filter: 'all' });
       setStudents(data.data.students);
       const initial = {};
       data.data.students.forEach(s => { initial[s.student?._id] = ''; });
       setMarksData(initial);
+      toastSuccess(`Class loaded: ${data.data.students.length} students.`);
     } catch (error) {
       console.error('Error fetching students:', error);
+      toastError(error, 'Failed to load class students');
+      setStudents([]);
+      setMarksData({});
     }
   };
 
   const handleSubmit = async () => {
-    if (!selectedSubject) return;
+    if (!selectedSubject) {
+      toastValidation('Please select a subject first.');
+      return;
+    }
+    const max = parseInt(maximumMarks, 10);
+    if (!max || max < 1) {
+      toastValidation('Maximum marks must be at least 1.');
+      return;
+    }
     setSubmitting(true);
     setMessage({ type: '', text: '' });
 
     try {
-      const marksArray = Object.entries(marksData)
-        .filter(([_, value]) => value !== '')
-        .map(([studentId, marksObtained]) => ({
-          studentId,
-          subjectId: selectedSubject,
-          examType,
-          marksObtained: parseInt(marksObtained),
-          maximumMarks: parseInt(maximumMarks)
-        }));
-
-      if (marksArray.length === 0) {
+      const entries = Object.entries(marksData).filter(([, value]) => value !== '');
+      if (entries.length === 0) {
+        toastValidation('Please enter marks for at least one student.');
         setMessage({ type: 'error', text: 'Please enter marks for at least one student' });
+        setSubmitting(false);
         return;
       }
+
+      const invalid = entries.find(([, v]) => {
+        const n = parseInt(v, 10);
+        return Number.isNaN(n) || n < 0 || n > max;
+      });
+      if (invalid) {
+        toastValidation(`Marks must be between 0 and ${max}.`);
+        setSubmitting(false);
+        return;
+      }
+
+      const marksArray = entries.map(([studentId, marksObtained]) => ({
+        studentId,
+        subjectId: selectedSubject,
+        examType,
+        marksObtained: parseInt(marksObtained, 10),
+        maximumMarks: max,
+      }));
 
       for (const marks of marksArray) {
         await createMarks(marks);
       }
 
-      setMessage({ type: 'success', text: `Marks saved for ${marksArray.length} students!` });
+      const successMsg = `Marks saved for ${marksArray.length} students!`;
+      setMessage({ type: 'success', text: successMsg });
+      toast.success(successMsg);
       setTimeout(() => {
         setMessage({ type: '', text: '' });
         setMarksData({});
       }, 2000);
     } catch (error) {
-      setMessage({ type: 'error', text: error.response?.data?.message || 'Failed to save marks' });
+      const msg = getApiErrorMessage(error, 'Failed to save marks');
+      setMessage({ type: 'error', text: msg });
+      toastError(error, 'Failed to save marks');
     } finally {
       setSubmitting(false);
     }

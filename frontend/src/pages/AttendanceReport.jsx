@@ -4,6 +4,7 @@ import { getClassReport } from '../services/attendanceService';
 import { getFacultySubjects } from '../services/facultyService';
 import { getAllSubjects } from '../services/subjectService';
 import { getAttendanceColor } from '../utils/helpers';
+import { toastError, toastSuccess, toastValidation, getApiErrorMessage } from '../utils/toastHelpers';
 
 const AttendanceReport = () => {
   const { user } = useAuth();
@@ -24,18 +25,38 @@ const AttendanceReport = () => {
         setSubjects(data.data || []);
         if (data.data?.length) {
           setSubjectId(data.data[0]._id);
+        } else {
+          toastValidation('No subjects available for report.');
         }
       })
-      .catch(() => {});
+      .catch((err) => toastError(err, 'Failed to load subjects'));
   }, [user]);
 
   useEffect(() => {
     if (!subjectId) return;
+    const minN = min === '' ? null : Number(min);
+    const maxN = max === '' ? null : Number(max);
+    if (minN !== null && (minN < 0 || minN > 100)) {
+      toastValidation('Min % must be between 0 and 100.');
+      return;
+    }
+    if (maxN !== null && (maxN < 0 || maxN > 100)) {
+      toastValidation('Max % must be between 0 and 100.');
+      return;
+    }
+    if (minN !== null && maxN !== null && minN > maxN) {
+      toastValidation('Min % cannot be greater than Max %.');
+      return;
+    }
     setLoading(true);
     setError('');
     getClassReport({ subjectId, min: min || undefined, max: max || undefined, sortBy, order })
       .then(({ data }) => setReport(data.data))
-      .catch((err) => setError(err.response?.data?.message || 'Failed to load report'))
+      .catch((err) => {
+        const msg = getApiErrorMessage(err, 'Failed to load report');
+        setError(msg);
+        toastError(err, 'Failed to load report');
+      })
       .finally(() => setLoading(false));
   }, [subjectId, min, max, sortBy, order]);
 
@@ -100,7 +121,10 @@ const AttendanceReport = () => {
               <option value="desc">Descending</option>
             </select>
           </div>
-          <button className="btn btn-secondary" onClick={() => window.print()} disabled={!report}>
+          <button className="btn btn-secondary" onClick={() => {
+            toastSuccess('Opening print dialog — choose "Save as PDF" to export.');
+            setTimeout(() => window.print(), 300);
+          }} disabled={!report}>
             Download PDF
           </button>
         </div>

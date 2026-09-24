@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { getAllFaculty, createFaculty, updateFaculty } from '../services/facultyService';
 import { getAllSubjects } from '../services/subjectService';
+import toast from 'react-hot-toast';
+import { toastError, toastValidation } from '../utils/toastHelpers';
 
 const FacultyManagement = () => {
   const [faculty, setFaculty] = useState([]);
@@ -20,6 +22,7 @@ const FacultyManagement = () => {
       setSubjects(subjectsRes.data.data);
     } catch (error) {
       console.error('Error fetching data:', error);
+      toastError(error, 'Failed to load faculty');
     } finally {
       setLoading(false);
     }
@@ -27,13 +30,24 @@ const FacultyManagement = () => {
 
   useEffect(() => { fetchData(); }, []);
 
+  const validateForm = () => {
+    if (!formData.name.trim()) { toastValidation('Name is required.'); return false; }
+    if (!/^\S+@\S+\.\S+$/.test(formData.email.trim())) { toastValidation('A valid email is required.'); return false; }
+    if (!editingFaculty && formData.password.length < 6) { toastValidation('Password must be at least 6 characters.'); return false; }
+    if (!formData.employeeId.trim()) { toastValidation('Employee ID is required.'); return false; }
+    return true;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!validateForm()) return;
     try {
       if (editingFaculty) {
         await updateFaculty(editingFaculty._id, formData);
+        toast.success('Faculty updated successfully.');
       } else {
         await createFaculty(formData);
+        toast.success('Faculty created successfully.');
       }
       setShowModal(false);
       setEditingFaculty(null);
@@ -41,6 +55,7 @@ const FacultyManagement = () => {
       fetchData();
     } catch (error) {
       console.error('Error saving faculty:', error);
+      toastError(error, 'Failed to save faculty');
     }
   };
 

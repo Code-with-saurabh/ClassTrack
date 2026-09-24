@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import { getMe } from '../services/authService';
 
 const AuthContext = createContext(null);
@@ -20,12 +21,14 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('token', userData.token);
     localStorage.setItem('user', JSON.stringify(userData.user));
     setUser(userData.user);
+    toast.success(`Welcome back, ${userData.user?.name?.split(' ')[0] || 'User'}!`);
   };
 
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);
+    toast.success('Logged out successfully.');
   };
 
   const refreshUser = async () => {
@@ -34,7 +37,10 @@ export const AuthProvider = ({ children }) => {
       setUser(data.data.user);
       localStorage.setItem('user', JSON.stringify(data.data.user));
     } catch {
-      logout();
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      setUser(null);
+      toast.error('Session expired. Please login again.');
     }
   };
 

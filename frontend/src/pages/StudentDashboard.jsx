@@ -5,6 +5,7 @@ import { getStudentAttendance } from '../services/attendanceService';
 import { getStudentMarks } from '../services/marksService';
 import { getStudentProfile } from '../services/studentService';
 import { getGreeting, getAttendanceColor } from '../utils/helpers';
+import { toastError, toastWarning } from '../utils/toastHelpers';
 
 const StudentDashboard = () => {
   const { user } = useAuth();
@@ -29,12 +30,22 @@ const StudentDashboard = () => {
         setMarks(marksRes.data.data);
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
+        toastError(error, 'Failed to load dashboard data');
       } finally {
         setLoading(false);
       }
     };
     fetchData();
   }, [user]);
+
+  const lowAttendance = attendance.subjectWise?.filter(s => s.percentage < 75) || [];
+
+  useEffect(() => {
+    if (!loading && lowAttendance.length > 0) {
+      toastWarning(`⚠️ Low attendance in ${lowAttendance.length} subject(s). Please improve!`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   if (loading) {
     return (
@@ -44,8 +55,6 @@ const StudentDashboard = () => {
       </div>
     );
   }
-
-  const lowAttendance = attendance.subjectWise?.filter(s => s.percentage < 75) || [];
 
   return (
     <div>

@@ -122,7 +122,10 @@ const AttendanceAnalytics = () => {
   const handleFilterChange = (filterType) => {
     setFilter(filterType);
     if (selectedSubject) {
-      fetchAnalytics(selectedSubject, filterType).catch(() => {});
+      fetchAnalytics(selectedSubject, filterType, { notify: false }).catch(() => {});
+      toast.success(`Filter applied: ${FILTERS.find((f) => f.value === filterType)?.label || filterType}`);
+    } else {
+      toast.error('Select a subject first');
     }
   };
 
@@ -131,10 +134,14 @@ const AttendanceAnalytics = () => {
       toast.error('From date cannot be after To date');
       return;
     }
+    if (!selectedSubject) {
+      toast.error('Select a subject first');
+      return;
+    }
     setAppliedFrom(dateFrom);
     setAppliedTo(dateTo);
     if (selectedSubject) {
-      fetchAnalytics(selectedSubject, filter).catch(() => {});
+      fetchAnalytics(selectedSubject, filter, { notify: true }).catch(() => {});
     }
   };
 
@@ -143,6 +150,7 @@ const AttendanceAnalytics = () => {
     setDateTo('');
     setAppliedFrom('');
     setAppliedTo('');
+    toast.success('Date range cleared.');
     if (selectedSubject) {
       fetchAnalytics(selectedSubject, filter).catch(() => {});
     }

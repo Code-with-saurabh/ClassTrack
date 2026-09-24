@@ -5,6 +5,7 @@ import { getAllStudents } from '../services/studentService';
 import { getAllFaculty } from '../services/facultyService';
 import { getAllSubjects } from '../services/subjectService';
 import { getGreeting } from '../utils/helpers';
+import { toastError } from '../utils/toastHelpers';
 
 const AdminDashboard = () => {
   const { user } = useAuth();
@@ -27,6 +28,7 @@ const AdminDashboard = () => {
         });
       } catch (error) {
         console.error('Error fetching stats:', error);
+        toastError(error, 'Failed to load dashboard stats');
       } finally {
         setLoading(false);
       }

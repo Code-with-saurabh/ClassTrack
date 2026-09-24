@@ -5,6 +5,7 @@ import {
   submitAttendance,
 } from '../services/attendanceService';
 import { todayKey, formatDate } from '../utils/helpers';
+import { toastError, toastSuccess, toastValidation, toastWarning, getApiErrorMessage } from '../utils/toastHelpers';
 
 const AttendanceEntry = () => {
   const [date, setDate] = useState(todayKey());
@@ -22,8 +23,13 @@ const AttendanceEntry = () => {
     try {
       const { data } = await getFacultyLectures(d);
       setLectures(data.data.lectures || []);
+      if ((data.data.lectures || []).length === 0) {
+        toastWarning(`No lectures scheduled on ${formatDate(d)}.`);
+      }
     } catch (error) {
-      setMessage({ type: 'error', text: error.response?.data?.message || 'Failed to load lectures' });
+      const msg = getApiErrorMessage(error, 'Failed to load lectures');
+      setMessage({ type: 'error', text: msg });
+      toastError(error, 'Failed to load lectures');
     } finally {
       setLoading(false);
     }
@@ -47,8 +53,11 @@ const AttendanceEntry = () => {
         initial[s._id] = s.status === 'present' || s.status === 'absent' ? s.status : 'present';
       });
       setAttendance(initial);
+      toastSuccess(`Loaded ${data.data.students.length} students for ${lecture.subject?.name || 'lecture'}.`);
     } catch (error) {
-      setMessage({ type: 'error', text: error.response?.data?.message || 'Failed to load students' });
+      const msg = getApiErrorMessage(error, 'Failed to load students');
+      setMessage({ type: 'error', text: msg });
+      toastError(error, 'Failed to load students');
     }
   };
 
@@ -61,15 +70,33 @@ const AttendanceEntry = () => {
   }, [attendance]);
 
   const setAll = (status) => {
+    if (students.length === 0) {
+      toastValidation('No students loaded yet. Select a lecture first.');
+      return;
+    }
     const next = {};
     students.forEach((s) => {
       next[s._id] = status;
     });
     setAttendance(next);
+    toast.success(`All ${students.length} students marked ${status}.`);
   };
 
   const handleSubmit = async () => {
-    if (!selectedLecture || students.length === 0) return;
+    if (!selectedLecture || students.length === 0) {
+      toastValidation('Select a lecture with students first.');
+      return;
+    }
+    const future = new Date(date) > new Date(todayKey());
+    if (future) {
+      toastValidation('Attendance cannot be marked for a future date.');
+      return;
+    }
+    const unmarked = students.filter((s) => !attendance[s._id]).length;
+    if (unmarked > 0) {
+      toastValidation(`Please set a status for all students (${unmarked} still unmarked).`);
+      return;
+    }
     setSubmitting(true);
     setMessage({ type: '', text: '' });
 
@@ -92,13 +119,14 @@ const AttendanceEntry = () => {
       if (s?.updated) parts.push(`${s.updated} updated`);
       if (s?.skipped) parts.push(`${s.skipped} already present`);
 
-      setMessage({
-        type: 'success',
-        text: `Attendance saved for ${formatDate(date)}. ${parts.join(', ')}.`,
-      });
+      const successMsg = `Attendance saved for ${formatDate(date)}. ${parts.join(', ')}.`;
+      setMessage({ type: 'success', text: successMsg });
+      toast.success(successMsg);
       await fetchLectures(date);
     } catch (error) {
-      setMessage({ type: 'error', text: error.response?.data?.message || 'Failed to submit attendance' });
+      const msg = getApiErrorMessage(error, 'Failed to submit attendance');
+      setMessage({ type: 'error', text: msg });
+      toastError(error, 'Failed to submit attendance');
     } finally {
       setSubmitting(false);
     }

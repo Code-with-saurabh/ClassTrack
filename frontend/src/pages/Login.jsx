@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { login } from '../services/authService';
+import toast from 'react-hot-toast';
+import { toastError, toastValidation, toastSuccess } from '../utils/toastHelpers';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -14,6 +16,24 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    if (!email.trim() || !password) {
+      const msg = 'Please enter your email and password.';
+      setError(msg);
+      toastValidation(msg);
+      return;
+    }
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      const msg = 'Please enter a valid email address.';
+      setError(msg);
+      toastValidation(msg);
+      return;
+    }
+    if (password.length < 6) {
+      const msg = 'Password must be at least 6 characters.';
+      setError(msg);
+      toastValidation(msg);
+      return;
+    }
     setLoading(true);
 
     try {
@@ -21,14 +41,23 @@ const Login = () => {
       loginUser(data.data);
 
       const role = data.data.user.role;
+      toastSuccess('Signed in successfully!');
       if (role === 'admin') navigate('/admin');
       else if (role === 'faculty') navigate('/faculty');
       else navigate('/student');
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed');
+      const msg = err.response?.data?.message || 'Login failed';
+      setError(msg);
+      toastError(err, 'Login failed');
     } finally {
       setLoading(false);
     }
+  };
+
+  const fillDemo = (demoEmail, demoPassword, label) => {
+    setEmail(demoEmail);
+    setPassword(demoPassword);
+    toast.success(`${label} credentials filled. Click Sign in.`);
   };
 
   return (
@@ -105,15 +134,15 @@ const Login = () => {
 
           <div className="login-demo">
             <p className="login-demo-title">Demo credentials</p>
-            <button className="login-demo-row" onClick={() => { setEmail('admin@classtrack.com'); setPassword('admin123'); }}>
+            <button className="login-demo-row" onClick={() => fillDemo('admin@classtrack.com', 'admin123', 'Admin')}>
               <span>Admin</span>
               <code>admin@classtrack.com / admin123</code>
             </button>
-            <button className="login-demo-row" onClick={() => { setEmail('saurabh@classtrack.com'); setPassword('faculty123'); }}>
+            <button className="login-demo-row" onClick={() => fillDemo('saurabh@classtrack.com', 'faculty123', 'Faculty')}>
               <span>Faculty</span>
               <code>saurabh@classtrack.com / faculty123</code>
             </button>
-            <button className="login-demo-row" onClick={() => { setEmail('student1@classtrack.com'); setPassword('student123'); }}>
+            <button className="login-demo-row" onClick={() => fillDemo('student1@classtrack.com', 'student123', 'Student')}>
               <span>Student</span>
               <code>student1@classtrack.com / student123</code>
             </button>

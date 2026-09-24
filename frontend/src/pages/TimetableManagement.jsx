@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { getAllTimetable, createTimetable, updateTimetable, deleteTimetable } from '../services/timetableService';
 import { getAllSubjects } from '../services/subjectService';
 import { getAllFaculty } from '../services/facultyService';
+import toast from 'react-hot-toast';
+import { toastError, toastValidation } from '../utils/toastHelpers';
 
 const TimetableManagement = () => {
   const [timetable, setTimetable] = useState([]);
@@ -26,6 +28,7 @@ const TimetableManagement = () => {
       setFacultyList(facultyRes.data.data);
     } catch (error) {
       console.error('Error fetching data:', error);
+      toastError(error, 'Failed to load timetable');
     } finally {
       setLoading(false);
     }
@@ -33,13 +36,26 @@ const TimetableManagement = () => {
 
   useEffect(() => { fetchData(); }, []);
 
+  const validateForm = () => {
+    if (!formData.subject) { toastValidation('Please select a subject.'); return false; }
+    if (!formData.faculty) { toastValidation('Please select a faculty member.'); return false; }
+    if (!formData.day) { toastValidation('Please select a day.'); return false; }
+    if (!formData.room.trim()) { toastValidation('Room is required.'); return false; }
+    if (formData.startTime >= formData.endTime) { toastValidation('End time must be after start time.'); return false; }
+    if (formData.semester < 1 || formData.semester > 8) { toastValidation('Semester must be between 1 and 8.'); return false; }
+    return true;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!validateForm()) return;
     try {
       if (editingEntry) {
         await updateTimetable(editingEntry._id, formData);
+        toast.success('Timetable entry updated.');
       } else {
         await createTimetable(formData);
+        toast.success('Timetable entry created.');
       }
       setShowModal(false);
       setEditingEntry(null);
@@ -47,6 +63,7 @@ const TimetableManagement = () => {
       fetchData();
     } catch (error) {
       console.error('Error saving timetable:', error);
+      toastError(error, 'Failed to save timetable entry');
     }
   };
 
@@ -70,10 +87,14 @@ const TimetableManagement = () => {
     if (window.confirm('Are you sure you want to delete this timetable entry?')) {
       try {
         await deleteTimetable(id);
+        toast.success('Timetable entry deleted.');
         fetchData();
       } catch (error) {
         console.error('Error deleting timetable:', error);
+        toastError(error, 'Failed to delete entry');
       }
+    } else {
+      toastValidation('Delete cancelled.');
     }
   };
 

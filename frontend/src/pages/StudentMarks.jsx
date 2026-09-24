@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getStudentMarks } from '../services/marksService';
+import { toastError } from '../utils/toastHelpers';
 
 const StudentMarks = () => {
   const { user } = useAuth();
@@ -14,6 +15,7 @@ const StudentMarks = () => {
         setMarks(data.data);
       } catch (error) {
         console.error('Error fetching marks:', error);
+        toastError(error, 'Failed to load marks');
       } finally {
         setLoading(false);
       }

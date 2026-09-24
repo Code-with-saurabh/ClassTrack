@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { getAttendanceByDate } from '../services/attendanceService';
 import { getAllSubjects } from '../services/subjectService';
 import { todayKey, formatDate } from '../utils/helpers';
+import { toastError, toastSuccess, toastValidation, toastWarning, getApiErrorMessage } from '../utils/toastHelpers';
 
 const AttendanceByDate = () => {
   const { user } = useAuth();
@@ -17,11 +18,15 @@ const AttendanceByDate = () => {
     if (user?.role === 'admin') {
       getAllSubjects()
         .then(({ data }) => setSubjects(data.data || []))
-        .catch(() => {});
+        .catch((err) => toastError(err, 'Failed to load subjects'));
     }
   }, [user]);
 
   const fetchReport = async (d, subj) => {
+    if (!d) {
+      toastValidation('Please select a date.');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -29,9 +34,14 @@ const AttendanceByDate = () => {
       if (subj) params.subjectId = subj;
       const { data } = await getAttendanceByDate(params);
       setReport(data.data);
+      if ((data.data?.lectures || []).length === 0) {
+        toastWarning(`No lectures scheduled on ${formatDate(d)}.`);
+      }
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load register');
+      const msg = getApiErrorMessage(err, 'Failed to load register');
+      setError(msg);
       setReport(null);
+      toastError(err, 'Failed to load register');
     } finally {
       setLoading(false);
     }
@@ -103,7 +113,10 @@ const AttendanceByDate = () => {
               </select>
             </div>
           )}
-          <button className="btn btn-secondary" onClick={() => window.print()}>
+          <button className="btn btn-secondary" onClick={() => {
+            toastSuccess('Opening print dialog — choose "Save as PDF" to export.');
+            setTimeout(() => window.print(), 300);
+          }}>
             Download PDF
           </button>
         </div>

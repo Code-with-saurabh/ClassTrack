@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getTodayTimetable, getAllTimetable } from '../services/timetableService';
+import { toastError } from '../utils/toastHelpers';
 
 const Timetable = () => {
   const [todayTimetable, setTodayTimetable] = useState([]);
@@ -30,6 +31,7 @@ const Timetable = () => {
         setWeeklyTimetable(grouped);
       } catch (error) {
         console.error('Error fetching timetable:', error);
+        toastError(error, 'Failed to load timetable');
       } finally {
         setLoading(false);
       }

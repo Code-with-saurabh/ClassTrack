@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { getAllSubjects, createSubject, updateSubject } from '../services/subjectService';
 import { getAllFaculty } from '../services/facultyService';
+import toast from 'react-hot-toast';
+import { toastError, toastValidation } from '../utils/toastHelpers';
 
 const SubjectManagement = () => {
   const [subjects, setSubjects] = useState([]);
@@ -20,6 +22,7 @@ const SubjectManagement = () => {
       setFacultyList(facultyRes.data.data);
     } catch (error) {
       console.error('Error fetching data:', error);
+      toastError(error, 'Failed to load subjects');
     } finally {
       setLoading(false);
     }
@@ -27,13 +30,23 @@ const SubjectManagement = () => {
 
   useEffect(() => { fetchData(); }, []);
 
+  const validateForm = () => {
+    if (!formData.name.trim()) { toastValidation('Subject name is required.'); return false; }
+    if (!formData.code.trim()) { toastValidation('Subject code is required.'); return false; }
+    if (formData.semester < 1 || formData.semester > 8) { toastValidation('Semester must be between 1 and 8.'); return false; }
+    return true;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!validateForm()) return;
     try {
       if (editingSubject) {
         await updateSubject(editingSubject._id, formData);
+        toast.success('Subject updated successfully.');
       } else {
         await createSubject(formData);
+        toast.success('Subject created successfully.');
       }
       setShowModal(false);
       setEditingSubject(null);
@@ -41,6 +54,7 @@ const SubjectManagement = () => {
       fetchData();
     } catch (error) {
       console.error('Error saving subject:', error);
+      toastError(error, 'Failed to save subject');
     }
   };
 

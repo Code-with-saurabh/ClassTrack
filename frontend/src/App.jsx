@@ -158,7 +158,30 @@ function App() {
       <Router>
         <AppRoutes />
       </Router>
-      <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: '#1e293b',
+            color: '#f8fafc',
+            border: '1px solid #334155',
+            borderRadius: '10px',
+            fontSize: '0.9rem',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
+            padding: '12px 16px',
+            maxWidth: '420px',
+          },
+          success: {
+            iconTheme: { primary: '#10b981', secondary: '#f8fafc' },
+            style: { background: '#064e3b', border: '1px solid #10b981' },
+          },
+          error: {
+            iconTheme: { primary: '#ef4444', secondary: '#f8fafc' },
+            style: { background: '#7f1d1d', border: '1px solid #ef4444' },
+          },
+        }}
+      />
     </AuthProvider>
   );
 }
