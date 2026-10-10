@@ -3,32 +3,52 @@ const Student = require('../models/Student');
 const Faculty = require('../models/Faculty');
 const Subject = require('../models/Subject');
 const Notification = require('../models/Notification');
+const asyncHandler = require('../middleware/asyncHandler');
+const { sendData, sendCreated, sendError } = require('../utils/response');
+
+const isAssignedSubject = (faculty, subjectId) => {
+  return faculty.assignedSubjects.some((id) => id.toString() === String(subjectId));
+};
+
+const notifyStudentMarks = async (student, subjectId, examType, marksObtained, maximumMarks) => {
+  if (!student.userId) return;
+
+  const subjectDoc = await Subject.findById(subjectId).select('name code').lean();
+
+  await Notification.create({
+    user: student.userId,
+    title: `Marks uploaded · ${subjectDoc?.name || 'Subject'}`,
+    body: `${subjectDoc?.code || ''} ${examType} — you scored ${marksObtained}/${maximumMarks}.`,
+    type: 'info',
+    link: '/student/marks',
+  }).catch((error) => console.error('Notify marks failed:', error.message));
+};
 
 exports.createMarks = async (req, res) => {
   try {
     const { studentId, subjectId, examType, marksObtained, maximumMarks, academicYear, semester } = req.body;
 
     if (!studentId || !subjectId || !examType || marksObtained === undefined || !maximumMarks) {
-      return res.status(400).json({ success: false, message: 'All fields are required' });
+      return sendError(res, 400, 'All fields are required');
     }
 
-    if (Number.isNaN(Number(marksObtained)) || Number(marksObtained) < 0 || Number(marksObtained) > Number(maximumMarks)) {
-      return res.status(400).json({ success: false, message: 'Invalid marks value' });
+    const marksValue = Number(marksObtained);
+    if (Number.isNaN(marksValue) || marksValue < 0 || marksValue > Number(maximumMarks)) {
+      return sendError(res, 400, 'Invalid marks value');
     }
 
     const faculty = await Faculty.findOne({ userId: req.user._id });
     if (!faculty) {
-      return res.status(404).json({ success: false, message: 'Faculty profile not found' });
+      return sendError(res, 404, 'Faculty profile not found');
     }
 
-    const isAssigned = faculty.assignedSubjects.some((s) => s.toString() === String(subjectId));
-    if (!isAssigned) {
-      return res.status(403).json({ success: false, message: 'Not authorized for this subject' });
+    if (!isAssignedSubject(faculty, subjectId)) {
+      return sendError(res, 403, 'Not authorized for this subject');
     }
 
     const student = await Student.findById(studentId);
     if (!student) {
-      return res.status(404).json({ success: false, message: 'Student not found' });
+      return sendError(res, 404, 'Student not found');
     }
 
     const finalSemester = semester || student.semester;
@@ -41,13 +61,16 @@ exports.createMarks = async (req, res) => {
       academicYear: finalAcademicYear
     });
 
+    let savedMarks;
+    let message;
+
     if (existing) {
       existing.marksObtained = marksObtained;
       existing.maximumMarks = maximumMarks;
-      await existing.save();
-      res.json({ success: true, message: 'Marks updated', data: existing });
+      savedMarks = await existing.save();
+      message = 'Marks updated';
     } else {
-      const marks = await Marks.create({
+      savedMarks = await Marks.create({
         student: studentId,
         subject: subjectId,
         examType,
@@ -56,113 +79,98 @@ exports.createMarks = async (req, res) => {
         academicYear: finalAcademicYear,
         semester: finalSemester
       });
-      res.status(201).json({ success: true, message: 'Marks created', data: marks });
+      message = 'Marks created';
     }
 
-    if (student.userId) {
-      const subjectDoc = await Subject.findById(subjectId).select('name code').lean();
-      await Notification.create({
-        user: student.userId,
-        title: `Marks uploaded · ${subjectDoc?.name || 'Subject'}`,
-        body: `${subjectDoc?.code || ''} ${examType} — you scored ${marksObtained}/${maximumMarks}.`,
-        type: 'info',
-        link: '/student/marks',
-      }).catch((e) => console.error('Notify marks failed:', e.message));
+    await notifyStudentMarks(student, subjectId, examType, marksObtained, maximumMarks);
+
+    if (existing) {
+      return sendData(res, savedMarks, message);
     }
+    return sendCreated(res, message, savedMarks);
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(409).json({ success: false, message: 'Marks already exist for this student, subject, and exam type' });
+      return sendError(res, 409, 'Marks already exist for this student, subject, and exam type');
     }
-    res.status(500).json({ success: false, message: 'Server error' });
+    return res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
-exports.getStudentMarks = async (req, res) => {
-  try {
-    const studentId = req.params.id;
+exports.getStudentMarks = asyncHandler(async (req, res) => {
+  const studentId = req.params.id;
 
-    let student;
-    if (req.user.role === 'student') {
-      student = await Student.findOne({ userId: req.user._id });
-    } else {
-      student = await Student.findById(studentId);
-    }
-
-    if (!student) {
-      return res.status(404).json({ success: false, message: 'Student not found' });
-    }
-
-    const marks = await Marks.find({ student: studentId })
-      .populate('subject', 'name code')
-      .sort({ subject: 1, examType: 1 });
-
-    res.json({ success: true, data: marks });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
+  let student;
+  if (req.user.role === 'student') {
+    student = await Student.findOne({ userId: req.user._id });
+  } else {
+    student = await Student.findById(studentId);
   }
-};
 
-exports.updateMarks = async (req, res) => {
-  try {
-    const { marksObtained, maximumMarks } = req.body;
+  if (!student) {
+    return sendError(res, 404, 'Student not found');
+  }
 
-    if (marksObtained === undefined || !maximumMarks) {
-      return res.status(400).json({ success: false, message: 'Marks and maximum marks are required' });
-    }
+  const marks = await Marks.find({ student: studentId })
+    .populate('subject', 'name code')
+    .sort({ subject: 1, examType: 1 });
 
-    if (marksObtained < 0 || marksObtained > maximumMarks) {
-      return res.status(400).json({ success: false, message: 'Invalid marks value' });
-    }
+  return sendData(res, marks);
+});
 
-    const marks = await Marks.findById(req.params.id);
-    if (!marks) {
-      return res.status(404).json({ success: false, message: 'Marks not found' });
-    }
+exports.updateMarks = asyncHandler(async (req, res) => {
+  const { marksObtained, maximumMarks } = req.body;
 
+  if (marksObtained === undefined || !maximumMarks) {
+    return sendError(res, 400, 'Marks and maximum marks are required');
+  }
+
+  if (marksObtained < 0 || marksObtained > maximumMarks) {
+    return sendError(res, 400, 'Invalid marks value');
+  }
+
+  const marks = await Marks.findById(req.params.id);
+  if (!marks) {
+    return sendError(res, 404, 'Marks not found');
+  }
+
+  const faculty = await Faculty.findOne({ userId: req.user._id });
+  if (!faculty) {
+    return sendError(res, 404, 'Faculty profile not found');
+  }
+
+  if (!isAssignedSubject(faculty, marks.subject)) {
+    return sendError(res, 403, 'Not authorized to update these marks');
+  }
+
+  marks.marksObtained = marksObtained;
+  marks.maximumMarks = maximumMarks;
+  await marks.save();
+
+  return sendData(res, marks, 'Marks updated');
+});
+
+exports.getMarksBySubject = asyncHandler(async (req, res) => {
+  const { subjectId, examType } = req.query;
+
+  const filter = {};
+  if (subjectId) filter.subject = subjectId;
+  if (examType) filter.examType = examType;
+
+  if (req.user.role === 'faculty') {
     const faculty = await Faculty.findOne({ userId: req.user._id });
     if (!faculty) {
-      return res.status(404).json({ success: false, message: 'Faculty profile not found' });
+      return sendError(res, 404, 'Faculty profile not found');
     }
-
-    const isAssigned = faculty.assignedSubjects.some((s) => s.toString() === marks.subject.toString());
-    if (!isAssigned) {
-      return res.status(403).json({ success: false, message: 'Not authorized to update these marks' });
+    const assigned = subjectId && isAssignedSubject(faculty, subjectId);
+    if (!assigned) {
+      return sendError(res, 403, 'Not authorized for this subject');
     }
-
-    marks.marksObtained = marksObtained;
-    marks.maximumMarks = maximumMarks;
-    await marks.save();
-
-    res.json({ success: true, message: 'Marks updated', data: marks });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
   }
-};
 
-exports.getMarksBySubject = async (req, res) => {
-  try {
-    const { subjectId, examType } = req.query;
-    const filter = {};
-    if (subjectId) filter.subject = subjectId;
-    if (examType) filter.examType = examType;
+  const marks = await Marks.find(filter)
+    .populate('student', 'rollNumber')
+    .populate({ path: 'student', populate: { path: 'userId', select: 'name' } })
+    .populate('subject', 'name code');
 
-    if (req.user.role === 'faculty') {
-      const faculty = await Faculty.findOne({ userId: req.user._id });
-      if (!faculty) {
-        return res.status(404).json({ success: false, message: 'Faculty profile not found' });
-      }
-      if (!subjectId || !faculty.assignedSubjects.some((s) => s.toString() === String(subjectId))) {
-        return res.status(403).json({ success: false, message: 'Not authorized for this subject' });
-      }
-    }
-
-    const marks = await Marks.find(filter)
-      .populate('student', 'rollNumber')
-      .populate({ path: 'student', populate: { path: 'userId', select: 'name' } })
-      .populate('subject', 'name code');
-
-    res.json({ success: true, data: marks });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
-};
+  return sendData(res, marks);
+});

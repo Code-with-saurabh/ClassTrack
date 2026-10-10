@@ -1,10 +1,10 @@
 const Attendance = require('../models/Attendance');
 const Student = require('../models/Student');
-const Subject = require('../models/Subject');
 const Timetable = require('../models/Timetable');
 const { objectId } = require('../utils/mongoid');
 
-const PERCENT = {
+// (present / total) * 100, 1 decimal round; total 0 ho to 0
+const PERCENTAGE_STAGE = {
   $cond: [
     { $eq: ['$total', 0] },
     0,
@@ -12,14 +12,31 @@ const PERCENT = {
   ],
 };
 
-const toOid = (id) => {
-  const o = objectId(id);
-  if (!o) throw new Error('Invalid id');
-  return o;
+const PRESENT_COUNT_STAGE = {
+  present: { $sum: { $cond: [{ $eq: ['$status', 'present'] }, 1, 0] } },
 };
 
+const toObjectId = (id) => {
+  const parsed = objectId(id);
+  if (!parsed) throw new Error('Invalid id');
+  return parsed;
+};
+
+const buildDateMatch = (dateFilter = {}) => {
+  if (!dateFilter.from && !dateFilter.to) return {};
+  const dateMatch = {};
+  if (dateFilter.from) dateMatch.$gte = dateFilter.from;
+  if (dateFilter.to) dateMatch.$lte = dateFilter.to;
+  return dateMatch;
+};
+
+// ---------------------------------------------------------------
+// Percentages (student ke liye)
+// ---------------------------------------------------------------
+
 const calculateAttendancePercentage = async (studentId, subjectId = null) => {
-  const student = toOid(studentId);
+  const student = toObjectId(studentId);
+
   const match = { student };
   const subject = objectId(subjectId);
   if (subject) match.subject = subject;
@@ -27,21 +44,42 @@ const calculateAttendancePercentage = async (studentId, subjectId = null) => {
   const records = await Attendance.find(match).select('status');
   const total = records.length;
   const present = records.filter((r) => r.status === 'present').length;
+
+  return total === 0 ? 0 : Math.round((present / total) * 100);
+};
+
+const calculateOverallAttendance = async (studentId) => {
+  const student = toObjectId(studentId);
+
+  const result = await Attendance.aggregate([
+    { $match: { student } },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        ...PRESENT_COUNT_STAGE,
+      },
+    },
+  ]);
+
+  if (result.length === 0) return 0;
+  const { total, present } = result[0];
   return total === 0 ? 0 : Math.round((present / total) * 100);
 };
 
 const calculateSubjectWiseAttendance = async (studentId) => {
-  const student = toOid(studentId);
+  const student = toObjectId(studentId);
+
   const pipeline = [
     { $match: { student } },
     {
       $group: {
         _id: '$subject',
         total: { $sum: 1 },
-        present: { $sum: { $cond: [{ $eq: ['$status', 'present'] }, 1, 0] } },
+        ...PRESENT_COUNT_STAGE,
       },
     },
-    { $addFields: { percentage: PERCENT } },
+    { $addFields: { percentage: PERCENTAGE_STAGE } },
     {
       $lookup: {
         from: 'subjects',
@@ -57,69 +95,60 @@ const calculateSubjectWiseAttendance = async (studentId) => {
   return Attendance.aggregate(pipeline);
 };
 
-const calculateOverallAttendance = async (studentId) => {
-  const student = toOid(studentId);
-  const result = await Attendance.aggregate([
-    { $match: { student } },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: 1 },
-        present: { $sum: { $cond: [{ $eq: ['$status', 'present'] }, 1, 0] } },
-      },
-    },
-  ]);
-
-  if (result.length === 0) return 0;
-  const { total, present } = result[0];
-  return total === 0 ? 0 : Math.round((present / total) * 100);
-};
+// ---------------------------------------------------------------
+// Class roster — subject + faculty se class ke combos nikaal kar students
+// ---------------------------------------------------------------
 
 const getClassRoster = async (facultyId, subjectId) => {
-  const entries = await Timetable.find({ subject: subjectId, faculty: facultyId })
+  const timetableEntries = await Timetable.find({ subject: subjectId, faculty: facultyId })
     .select('semester department division subject')
     .lean();
-  const comboSet = new Set(
-    entries.map((e) => `${e.semester}|${e.department}|${e.division}`)
+
+  const comboKeys = new Set(
+    timetableEntries.map((entry) => `${entry.semester}|${entry.department}|${entry.division}`)
   );
-  const combos = Array.from(comboSet).map((c) => {
-    const [semester, department, division] = c.split('|');
+
+  const classCombos = Array.from(comboKeys).map((key) => {
+    const [semester, department, division] = key.split('|');
     return { semester: Number(semester), department, division };
   });
 
-  if (combos.length === 0) return [];
-  return Student.find({ $or: combos }).populate('userId', 'name email').lean();
+  if (classCombos.length === 0) return [];
+
+  return Student.find({ $or: classCombos }).populate('userId', 'name email').lean();
 };
 
+// ---------------------------------------------------------------
+// Analytics — per student total / present / percentage
+// ---------------------------------------------------------------
+
 const getAttendanceAnalytics = async (facultyId, subjectId, dateFilter = {}) => {
-  const faculty = toOid(facultyId);
-  const subject = toOid(subjectId);
+  const faculty = toObjectId(facultyId);
+  const subject = toObjectId(subjectId);
 
   const match = { faculty, subject };
-  if (dateFilter.from || dateFilter.to) {
-    match.date = {};
-    if (dateFilter.from) match.date.$gte = dateFilter.from;
-    if (dateFilter.to) match.date.$lte = dateFilter.to;
-  }
+  const dateMatch = buildDateMatch(dateFilter);
+  if (Object.keys(dateMatch).length > 0) match.date = dateMatch;
 
   const pipeline = [
     { $match: match },
-    { $match: { faculty, subject } },
     {
       $group: {
         _id: '$student',
         total: { $sum: 1 },
-        present: { $sum: { $cond: [{ $eq: ['$status', 'present'] }, 1, 0] } },
+        ...PRESENT_COUNT_STAGE,
       },
     },
-    { $addFields: { percentage: PERCENT } },
+    { $addFields: { percentage: PERCENTAGE_STAGE } },
   ];
+
   const grouped = await Attendance.aggregate(pipeline);
-  const statsMap = new Map(grouped.map((g) => [g._id.toString(), g]));
+  const statsByStudent = new Map(grouped.map((g) => [g._id.toString(), g]));
 
   const roster = await getClassRoster(facultyId, subjectId);
+
   return roster.map((student) => {
-    const stat = statsMap.get(student._id.toString());
+    const stat = statsByStudent.get(student._id.toString());
     return {
       student,
       total: stat ? stat.total : 0,
@@ -129,15 +158,17 @@ const getAttendanceAnalytics = async (facultyId, subjectId, dateFilter = {}) => 
   });
 };
 
+// ---------------------------------------------------------------
+// Daily trend — har din ki attendance % (line chart ke liye)
+// ---------------------------------------------------------------
+
 const getDailyTrend = async (facultyId, subjectId, dateFilter = {}) => {
-  const faculty = toOid(facultyId);
-  const subject = toOid(subjectId);
+  const faculty = toObjectId(facultyId);
+  const subject = toObjectId(subjectId);
+
   const match = { faculty, subject };
-  if (dateFilter.from || dateFilter.to) {
-    match.date = {};
-    if (dateFilter.from) match.date.$gte = dateFilter.from;
-    if (dateFilter.to) match.date.$lte = dateFilter.to;
-  }
+  const dateMatch = buildDateMatch(dateFilter);
+  if (Object.keys(dateMatch).length > 0) match.date = dateMatch;
 
   const rows = await Attendance.aggregate([
     { $match: match },
@@ -149,36 +180,47 @@ const getDailyTrend = async (facultyId, subjectId, dateFilter = {}) => {
       },
     },
     { $sort: { _id: 1 } },
-    { $addFields: { percentage: PERCENT } },
+    { $addFields: { percentage: PERCENTAGE_STAGE } },
   ]);
 
-  return rows.map((r) => ({
-    date: r._id,
-    present: r.present,
-    total: r.total,
-    percentage: r.percentage,
+  return rows.map((row) => ({
+    date: row._id,
+    present: row.present,
+    total: row.total,
+    percentage: row.percentage,
   }));
 };
 
+// ---------------------------------------------------------------
+// Stats cards + category counts
+// ---------------------------------------------------------------
+
 const buildStats = (students) => {
   const totalStudents = students.length;
-  const withRecords = students.filter((s) => s.total > 0).length;
   const withAttendance = students.filter((s) => s.total > 0);
-  const avgAttendance =
-    withAttendance.length > 0
-      ? Math.round(
-          withAttendance.reduce((sum, s) => sum + s.percentage, 0) / withAttendance.length
-        )
-      : 0;
-  const highest = withAttendance.length > 0 ? Math.max(...withAttendance.map((s) => s.percentage)) : 0;
-  const lowest = withAttendance.length > 0 ? Math.min(...withAttendance.map((s) => s.percentage)) : 0;
+  const withRecords = withAttendance.length;
+
+  const avgAttendance = withAttendance.length > 0
+    ? Math.round(withAttendance.reduce((sum, s) => sum + s.percentage, 0) / withAttendance.length)
+    : 0;
+
+  const highest = withAttendance.length > 0
+    ? Math.max(...withAttendance.map((s) => s.percentage))
+    : 0;
+
+  const lowest = withAttendance.length > 0
+    ? Math.min(...withAttendance.map((s) => s.percentage))
+    : 0;
+
   const below75 = students.filter((s) => s.percentage < 75).length;
+
   const categories = {
     below75,
     '75to80': students.filter((s) => s.percentage >= 75 && s.percentage < 80).length,
     '80to90': students.filter((s) => s.percentage >= 80 && s.percentage < 90).length,
     above90: students.filter((s) => s.percentage >= 90).length,
   };
+
   return {
     totalStudents,
     withRecords,
@@ -191,6 +233,10 @@ const buildStats = (students) => {
   };
 };
 
+// ---------------------------------------------------------------
+// Filters — analytics page ke filter pills
+// ---------------------------------------------------------------
+
 const applyFilter = (students, filter = 'all') => {
   switch (filter) {
     case 'below75':
@@ -202,18 +248,16 @@ const applyFilter = (students, filter = 'all') => {
     case 'above90':
       return students.filter((s) => s.percentage >= 90);
     case 'all':
-      return students;
     default:
       return students;
   }
 };
 
 const applyThreshold = (students, min, max) => {
-  const lo = min === undefined || min === null || min === '' ? -Infinity : Number(min);
-  const hi = max === undefined || max === null || max === '' ? Infinity : Number(max);
-  return students.filter(
-    (s) => s.percentage >= lo && s.percentage <= hi
-  );
+  const lowerBound = min === undefined || min === null || min === '' ? -Infinity : Number(min);
+  const upperBound = max === undefined || max === null || max === '' ? Infinity : Number(max);
+
+  return students.filter((s) => s.percentage >= lowerBound && s.percentage <= upperBound);
 };
 
 module.exports = {

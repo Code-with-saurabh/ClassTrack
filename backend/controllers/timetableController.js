@@ -1,128 +1,116 @@
 const Timetable = require('../models/Timetable');
+const Student = require('../models/Student');
+const Faculty = require('../models/Faculty');
+const asyncHandler = require('../middleware/asyncHandler');
+const { sendData, sendCreated, sendMessage, sendError } = require('../utils/response');
 
-exports.getAllTimetable = async (req, res) => {
-  try {
-    const { semester, department, division, day, subject } = req.query;
-    const filter = {};
-    if (semester) filter.semester = parseInt(semester);
-    if (department) filter.department = department;
-    if (division) filter.division = division;
-    if (day) filter.day = day;
-    if (subject) filter.subject = subject;
-
-    if (req.user.role === 'student') {
-      const Student = require('../models/Student');
-      const student = await Student.findOne({ userId: req.user._id });
-      if (!student) {
-        return res.status(404).json({ success: false, message: 'Student profile not found' });
-      }
-      filter.semester = student.semester;
-      filter.department = student.department;
-      filter.division = student.division;
-    } else if (req.user.role === 'faculty') {
-      const Faculty = require('../models/Faculty');
-      const faculty = await Faculty.findOne({ userId: req.user._id });
-      if (!faculty) {
-        return res.status(404).json({ success: false, message: 'Faculty profile not found' });
-      }
-      filter.faculty = faculty._id;
-    }
-
-    const timetable = await Timetable.find(filter)
-      .populate('subject', 'name code')
-      .populate('faculty')
-      .populate({ path: 'faculty', populate: { path: 'userId', select: 'name' } })
-      .sort({ day: 1, startTime: 1 });
-
-    res.json({ success: true, data: timetable });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
+const SUBJECT_FIELDS = 'name code';
+const FACULTY_WITH_USER = {
+  path: 'faculty',
+  populate: { path: 'userId', select: 'name' }
 };
 
-exports.getTodayTimetable = async (req, res) => {
-  try {
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const today = days[new Date().getDay()];
-
-    let filter = { day: today };
-
-    if (req.user.role === 'student') {
-      const Student = require('../models/Student');
-      const student = await Student.findOne({ userId: req.user._id });
-      if (!student) {
-        return res.status(404).json({ success: false, message: 'Student profile not found' });
-      }
-      filter.semester = student.semester;
-      filter.department = student.department;
-      filter.division = student.division;
-    } else if (req.user.role === 'faculty') {
-      const Faculty = require('../models/Faculty');
-      const faculty = await Faculty.findOne({ userId: req.user._id });
-      if (!faculty) {
-        return res.status(404).json({ success: false, message: 'Faculty profile not found' });
-      }
-      filter.faculty = faculty._id;
+// User ki role ke hisaab se timetable filter set karta hai
+// (student → apni class ka, faculty → apne lectures, admin → jo bheja hai)
+const buildRoleFilter = async (req, filter) => {
+  if (req.user.role === 'student') {
+    const student = await Student.findOne({ userId: req.user._id });
+    if (!student) {
+      return { error: 'Student profile not found' };
     }
-
-    const timetable = await Timetable.find(filter)
-      .populate('subject', 'name code')
-      .populate('faculty')
-      .populate({ path: 'faculty', populate: { path: 'userId', select: 'name' } })
-      .sort({ startTime: 1 });
-
-    res.json({ success: true, data: timetable });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
+    filter.semester = student.semester;
+    filter.department = student.department;
+    filter.division = student.division;
+  } else if (req.user.role === 'faculty') {
+    const faculty = await Faculty.findOne({ userId: req.user._id });
+    if (!faculty) {
+      return { error: 'Faculty profile not found' };
+    }
+    filter.faculty = faculty._id;
   }
+  return { filter };
 };
 
-exports.createTimetable = async (req, res) => {
-  try {
-    const { subject, faculty, division, day, startTime, endTime, room, semester, department } = req.body;
+exports.getAllTimetable = asyncHandler(async (req, res) => {
+  const { semester, department, division, day, subject } = req.query;
 
-    if (!subject || !faculty || !division || !day || !startTime || !endTime || !room || !semester || !department) {
-      return res.status(400).json({ success: false, message: 'All fields are required' });
-    }
+  const filter = {};
+  if (semester) filter.semester = parseInt(semester);
+  if (department) filter.department = department;
+  if (division) filter.division = division;
+  if (day) filter.day = day;
+  if (subject) filter.subject = subject;
 
-    const timetable = await Timetable.create({
-      subject, faculty, division, day, startTime, endTime, room, semester, department
-    });
-
-    res.status(201).json({ success: true, message: 'Timetable entry created', data: timetable });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
+  const roleResult = await buildRoleFilter(req, filter);
+  if (roleResult.error) {
+    return sendError(res, 404, roleResult.error);
   }
-};
 
-exports.updateTimetable = async (req, res) => {
-  try {
-    const { subject, faculty, division, day, startTime, endTime, room, semester, department } = req.body;
+  const timetable = await Timetable.find(filter)
+    .populate('subject', SUBJECT_FIELDS)
+    .populate('faculty')
+    .populate(FACULTY_WITH_USER)
+    .sort({ day: 1, startTime: 1 });
 
-    const timetable = await Timetable.findByIdAndUpdate(
-      req.params.id,
-      { subject, faculty, division, day, startTime, endTime, room, semester, department },
-      { new: true }
-    );
+  return sendData(res, timetable);
+});
 
-    if (!timetable) {
-      return res.status(404).json({ success: false, message: 'Timetable entry not found' });
-    }
+exports.getTodayTimetable = asyncHandler(async (req, res) => {
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const today = dayNames[new Date().getDay()];
 
-    res.json({ success: true, message: 'Timetable updated', data: timetable });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
+  const filter = { day: today };
+
+  const roleResult = await buildRoleFilter(req, filter);
+  if (roleResult.error) {
+    return sendError(res, 404, roleResult.error);
   }
-};
 
-exports.deleteTimetable = async (req, res) => {
-  try {
-    const timetable = await Timetable.findByIdAndDelete(req.params.id);
-    if (!timetable) {
-      return res.status(404).json({ success: false, message: 'Timetable entry not found' });
-    }
-    res.json({ success: true, message: 'Timetable entry deleted' });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
+  const timetable = await Timetable.find(filter)
+    .populate('subject', SUBJECT_FIELDS)
+    .populate('faculty')
+    .populate(FACULTY_WITH_USER)
+    .sort({ startTime: 1 });
+
+  return sendData(res, timetable);
+});
+
+exports.createTimetable = asyncHandler(async (req, res) => {
+  const { subject, faculty, division, day, startTime, endTime, room, semester, department } = req.body;
+
+  if (!subject || !faculty || !division || !day || !startTime || !endTime || !room || !semester || !department) {
+    return sendError(res, 400, 'All fields are required');
   }
-};
+
+  const timetable = await Timetable.create({
+    subject, faculty, division, day, startTime, endTime, room, semester, department
+  });
+
+  return sendCreated(res, 'Timetable entry created', timetable);
+});
+
+exports.updateTimetable = asyncHandler(async (req, res) => {
+  const { subject, faculty, division, day, startTime, endTime, room, semester, department } = req.body;
+
+  const timetable = await Timetable.findByIdAndUpdate(
+    req.params.id,
+    { subject, faculty, division, day, startTime, endTime, room, semester, department },
+    { new: true }
+  );
+
+  if (!timetable) {
+    return sendError(res, 404, 'Timetable entry not found');
+  }
+
+  return sendData(res, timetable, 'Timetable updated');
+});
+
+exports.deleteTimetable = asyncHandler(async (req, res) => {
+  const timetable = await Timetable.findByIdAndDelete(req.params.id);
+
+  if (!timetable) {
+    return sendError(res, 404, 'Timetable entry not found');
+  }
+
+  return sendMessage(res, 'Timetable entry deleted');
+});
