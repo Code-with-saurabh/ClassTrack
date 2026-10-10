@@ -14,12 +14,13 @@ const FacultyDashboard = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchData = async () => {
+    const loadDashboard = async () => {
       try {
         const [subjectsRes, lecturesRes] = await Promise.all([
           getFacultySubjects(),
-          getFacultyLectures()
+          getFacultyLectures(),
         ]);
+
         setSubjects(subjectsRes.data.data);
         setLectures(lecturesRes.data.data.lectures);
       } catch (error) {
@@ -29,7 +30,8 @@ const FacultyDashboard = () => {
         setLoading(false);
       }
     };
-    fetchData();
+
+    loadDashboard();
   }, []);
 
   if (loading) {
@@ -43,7 +45,7 @@ const FacultyDashboard = () => {
 
   return (
     <div>
-      <div className="card" style={{ marginBottom: '1.5rem', background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', color: 'white' }}>
+      <div className="card hero-card" style={{ marginBottom: '1.5rem' }}>
         <h2 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>
           {getGreeting()}, {user?.name?.split(' ')[0]}
         </h2>
@@ -107,8 +109,12 @@ const FacultyDashboard = () => {
             </div>
           ) : (
             lectures.map((lecture) => (
-              <div key={lecture._id} className="lecture-card" style={{ cursor: 'pointer' }}
-                   onClick={() => navigate('/faculty/attendance')}>
+              <div
+                key={lecture._id}
+                className="lecture-card"
+                style={{ cursor: 'pointer' }}
+                onClick={() => navigate('/faculty/attendance')}
+              >
                 <div className="lecture-time">
                   {lecture.startTime} - {lecture.endTime}
                 </div>

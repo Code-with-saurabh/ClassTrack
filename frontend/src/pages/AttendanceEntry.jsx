@@ -4,8 +4,13 @@ import {
   getLectureStudents,
   submitAttendance,
 } from '../services/attendanceService';
+import Pagination from '../components/Pagination';
+import usePagination from '../hooks/usePagination';
 import { todayKey, formatDate } from '../utils/helpers';
 import { toastError, toastSuccess, toastValidation, toastWarning, getApiErrorMessage } from '../utils/toastHelpers';
+
+const LECTURES_PER_PAGE = 5;
+const STUDENTS_PER_PAGE = 10;
 
 const AttendanceEntry = () => {
   const [date, setDate] = useState(todayKey());
@@ -17,14 +22,18 @@ const AttendanceEntry = () => {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
-  const fetchLectures = async (d) => {
+  // Date ki lectures load karo
+  const fetchLectures = async (targetDate) => {
     setLoading(true);
     setMessage({ type: '', text: '' });
+
     try {
-      const { data } = await getFacultyLectures(d);
-      setLectures(data.data.lectures || []);
-      if ((data.data.lectures || []).length === 0) {
-        toastWarning(`No lectures scheduled on ${formatDate(d)}.`);
+      const { data } = await getFacultyLectures(targetDate);
+      const lectureList = data.data.lectures || [];
+      setLectures(lectureList);
+
+      if (lectureList.length === 0) {
+        toastWarning(`No lectures scheduled on ${formatDate(targetDate)}.`);
       }
     } catch (error) {
       const msg = getApiErrorMessage(error, 'Failed to load lectures');
@@ -42,18 +51,24 @@ const AttendanceEntry = () => {
     setAttendance({});
   }, [date]);
 
+  // Lecture chunte hi uski class ki student list + default "present" load karo
   const handleLectureSelect = async (lecture) => {
     setSelectedLecture(lecture);
     setMessage({ type: '', text: '' });
+
     try {
       const { data } = await getLectureStudents(lecture._id, date);
-      setStudents(data.data.students);
-      const initial = {};
-      data.data.students.forEach((s) => {
-        initial[s._id] = s.status === 'present' || s.status === 'absent' ? s.status : 'present';
+      const studentList = data.data.students;
+      setStudents(studentList);
+
+      const initialAttendance = {};
+      studentList.forEach((student) => {
+        const saved = student.status;
+        initialAttendance[student._id] = saved === 'present' || saved === 'absent' ? saved : 'present';
       });
-      setAttendance(initial);
-      toastSuccess(`Loaded ${data.data.students.length} students for ${lecture.subject?.name || 'lecture'}.`);
+      setAttendance(initialAttendance);
+
+      toastSuccess(`Loaded ${studentList.length} students for ${lecture.subject?.name || 'lecture'}.`);
     } catch (error) {
       const msg = getApiErrorMessage(error, 'Failed to load students');
       setMessage({ type: 'error', text: msg });
@@ -69,34 +84,63 @@ const AttendanceEntry = () => {
     };
   }, [attendance]);
 
+  const {
+    page: lecturePageNum,
+    setPage: setLecturePage,
+    total: lectureTotal,
+    pageItems: lecturePageItems,
+  } = usePagination(lectures, LECTURES_PER_PAGE);
+
+  const {
+    page: studentPageNum,
+    setPage: setStudentPage,
+    total: studentTotal,
+    pageItems: studentPageItems,
+  } = usePagination(students, STUDENTS_PER_PAGE);
+
+  // Ek click me sabko present / absent
   const setAll = (status) => {
     if (students.length === 0) {
       toastValidation('No students loaded yet. Select a lecture first.');
       return;
     }
+
     const next = {};
-    students.forEach((s) => {
-      next[s._id] = status;
+    students.forEach((student) => {
+      next[student._id] = status;
     });
     setAttendance(next);
-    toast.success(`All ${students.length} students marked ${status}.`);
+    toast.success(`All ${students.length} students marked ${status}.`, { id: 'mark-all-status' });
   };
 
-  const handleSubmit = async () => {
+  const clearLectureSelection = () => {
+    setSelectedLecture(null);
+    setStudents([]);
+    setAttendance({});
+  };
+
+  const validateSubmit = () => {
     if (!selectedLecture || students.length === 0) {
       toastValidation('Select a lecture with students first.');
-      return;
+      return false;
     }
-    const future = new Date(date) > new Date(todayKey());
-    if (future) {
+    if (new Date(date) > new Date(todayKey())) {
       toastValidation('Attendance cannot be marked for a future date.');
-      return;
+      return false;
     }
+
     const unmarked = students.filter((s) => !attendance[s._id]).length;
     if (unmarked > 0) {
       toastValidation(`Please set a status for all students (${unmarked} still unmarked).`);
-      return;
+      return false;
     }
+
+    return true;
+  };
+
+  const handleSubmit = async () => {
+    if (!validateSubmit()) return;
+
     setSubmitting(true);
     setMessage({ type: '', text: '' });
 
@@ -113,15 +157,17 @@ const AttendanceEntry = () => {
         records,
       });
 
-      const s = data.data?.stats;
+      // Server ka stats dikhao: kitne created / updated / skipped
+      const stats = data.data?.stats;
       const parts = [];
-      if (s?.created) parts.push(`${s.created} created`);
-      if (s?.updated) parts.push(`${s.updated} updated`);
-      if (s?.skipped) parts.push(`${s.skipped} already present`);
+      if (stats?.created) parts.push(`${stats.created} created`);
+      if (stats?.updated) parts.push(`${stats.updated} updated`);
+      if (stats?.skipped) parts.push(`${stats.skipped} already present`);
 
       const successMsg = `Attendance saved for ${formatDate(date)}. ${parts.join(', ')}.`;
       setMessage({ type: 'success', text: successMsg });
       toast.success(successMsg);
+
       await fetchLectures(date);
     } catch (error) {
       const msg = getApiErrorMessage(error, 'Failed to submit attendance');
@@ -182,6 +228,7 @@ const AttendanceEntry = () => {
               {lectures.length} lecture(s) on {formatDate(date)}
             </span>
           </div>
+
           {lectures.length === 0 ? (
             <div className="empty-state">
               <p>No lectures scheduled for this date</p>
@@ -218,14 +265,7 @@ const AttendanceEntry = () => {
                 {selectedLecture.startTime} - {selectedLecture.endTime}
               </p>
             </div>
-            <button
-              className="btn btn-secondary"
-              onClick={() => {
-                setSelectedLecture(null);
-                setStudents([]);
-                setAttendance({});
-              }}
-            >
+            <button className="btn btn-secondary" onClick={clearLectureSelection}>
               Change Lecture
             </button>
           </div>

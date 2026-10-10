@@ -1,5 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { Toaster } from 'react-hot-toast';
+import Layout from './components/Layout';
 import Login from './pages/Login';
 import StudentDashboard from './pages/StudentDashboard';
 import FacultyDashboard from './pages/FacultyDashboard';
@@ -15,29 +17,49 @@ import StudentManagement from './pages/StudentManagement';
 import FacultyManagement from './pages/FacultyManagement';
 import SubjectManagement from './pages/SubjectManagement';
 import TimetableManagement from './pages/TimetableManagement';
-import { Toaster } from 'react-hot-toast';
-import Layout from './components/Layout';
 import './App.css';
 
+// Role ke hisaab se home page
+const HOME_BY_ROLE = {
+  admin: '/admin',
+  faculty: '/faculty',
+  student: '/student',
+};
+
+// Saare protected routes ek jagah — path, allowed roles, aur page
+const PROTECTED_ROUTES = [
+  { path: '/student', roles: ['student'], page: <StudentDashboard /> },
+  { path: '/student/timetable', roles: ['student'], page: <Timetable /> },
+  { path: '/student/marks', roles: ['student'], page: <StudentMarks /> },
+  { path: '/faculty', roles: ['faculty'], page: <FacultyDashboard /> },
+  { path: '/faculty/attendance', roles: ['faculty'], page: <AttendanceEntry /> },
+  { path: '/faculty/analytics', roles: ['faculty'], page: <AttendanceAnalytics /> },
+  { path: '/faculty/marks', roles: ['faculty'], page: <MarksEntry /> },
+  { path: '/faculty/daily-register', roles: ['faculty'], page: <AttendanceByDate /> },
+  { path: '/faculty/report', roles: ['faculty'], page: <AttendanceReport /> },
+  { path: '/admin', roles: ['admin'], page: <AdminDashboard /> },
+  { path: '/admin/students', roles: ['admin'], page: <StudentManagement /> },
+  { path: '/admin/faculty', roles: ['admin'], page: <FacultyManagement /> },
+  { path: '/admin/subjects', roles: ['admin'], page: <SubjectManagement /> },
+  { path: '/admin/timetable', roles: ['admin'], page: <TimetableManagement /> },
+  { path: '/admin/daily-register', roles: ['admin'], page: <AttendanceByDate /> },
+  { path: '/admin/report', roles: ['admin'], page: <AttendanceReport /> },
+];
+
+const LoadingScreen = () => (
+  <div className="loading-container">
+    <div className="spinner"></div>
+    <p>Loading...</p>
+  </div>
+);
+
+// Login ke bina koi page nahi khulega; role galat ho to login par bhej dega
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user, loading } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="loading-container">
-        <div className="spinner"></div>
-        <p>Loading...</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/login" replace />;
-  }
+  if (loading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (allowedRoles && !allowedRoles.includes(user.role)) return <Navigate to="/login" replace />;
 
   return children;
 };
@@ -47,109 +69,50 @@ const AppRoutes = () => {
 
   return (
     <Routes>
-      <Route path="/login" element={
-        user ? <Navigate to={user.role === 'admin' ? '/admin' : user.role === 'faculty' ? '/faculty' : '/student'} replace /> : <Login />
-      } />
+      <Route
+        path="/login"
+        element={
+          user ? <Navigate to={HOME_BY_ROLE[user.role] || '/login'} replace /> : <Login />
+        }
+      />
 
-      <Route path="/student" element={
-        <ProtectedRoute allowedRoles={['student']}>
-          <Layout><StudentDashboard /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/student/timetable" element={
-        <ProtectedRoute allowedRoles={['student']}>
-          <Layout><Timetable /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/student/marks" element={
-        <ProtectedRoute allowedRoles={['student']}>
-          <Layout><StudentMarks /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/faculty" element={
-        <ProtectedRoute allowedRoles={['faculty']}>
-          <Layout><FacultyDashboard /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/faculty/attendance" element={
-        <ProtectedRoute allowedRoles={['faculty']}>
-          <Layout><AttendanceEntry /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/faculty/analytics" element={
-        <ProtectedRoute allowedRoles={['faculty']}>
-          <Layout><AttendanceAnalytics /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/faculty/marks" element={
-        <ProtectedRoute allowedRoles={['faculty']}>
-          <Layout><MarksEntry /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/faculty/daily-register" element={
-        <ProtectedRoute allowedRoles={['faculty']}>
-          <Layout><AttendanceByDate /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/faculty/report" element={
-        <ProtectedRoute allowedRoles={['faculty']}>
-          <Layout><AttendanceReport /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/admin" element={
-        <ProtectedRoute allowedRoles={['admin']}>
-          <Layout><AdminDashboard /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/admin/students" element={
-        <ProtectedRoute allowedRoles={['admin']}>
-          <Layout><StudentManagement /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/admin/faculty" element={
-        <ProtectedRoute allowedRoles={['admin']}>
-          <Layout><FacultyManagement /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/admin/subjects" element={
-        <ProtectedRoute allowedRoles={['admin']}>
-          <Layout><SubjectManagement /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/admin/timetable" element={
-        <ProtectedRoute allowedRoles={['admin']}>
-          <Layout><TimetableManagement /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/admin/daily-register" element={
-        <ProtectedRoute allowedRoles={['admin']}>
-          <Layout><AttendanceByDate /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/admin/report" element={
-        <ProtectedRoute allowedRoles={['admin']}>
-          <Layout><AttendanceReport /></Layout>
-        </ProtectedRoute>
-      } />
+      {PROTECTED_ROUTES.map((route) => (
+        <Route
+          key={route.path}
+          path={route.path}
+          element={
+            <ProtectedRoute allowedRoles={route.roles}>
+              <Layout>{route.page}</Layout>
+            </ProtectedRoute>
+          }
+        />
+      ))}
 
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );
+};
+
+const TOAST_OPTIONS = {
+  duration: 3000,
+  style: {
+    background: '#1e293b',
+    color: '#f8fafc',
+    border: '1px solid #334155',
+    borderRadius: '10px',
+    fontSize: '0.9rem',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
+    padding: '12px 16px',
+    maxWidth: '420px',
+  },
+  success: {
+    iconTheme: { primary: '#10b981', secondary: '#f8fafc' },
+    style: { background: '#064e3b', border: '1px solid #10b981' },
+  },
+  error: {
+    iconTheme: { primary: '#ef4444', secondary: '#f8fafc' },
+    style: { background: '#7f1d1d', border: '1px solid #ef4444' },
+  },
 };
 
 function App() {
@@ -158,30 +121,7 @@ function App() {
       <Router>
         <AppRoutes />
       </Router>
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          duration: 4000,
-          style: {
-            background: '#1e293b',
-            color: '#f8fafc',
-            border: '1px solid #334155',
-            borderRadius: '10px',
-            fontSize: '0.9rem',
-            boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
-            padding: '12px 16px',
-            maxWidth: '420px',
-          },
-          success: {
-            iconTheme: { primary: '#10b981', secondary: '#f8fafc' },
-            style: { background: '#064e3b', border: '1px solid #10b981' },
-          },
-          error: {
-            iconTheme: { primary: '#ef4444', secondary: '#f8fafc' },
-            style: { background: '#7f1d1d', border: '1px solid #ef4444' },
-          },
-        }}
-      />
+      <Toaster position="top-right" visibleToasts={2} toastOptions={TOAST_OPTIONS} />
     </AuthProvider>
   );
 }

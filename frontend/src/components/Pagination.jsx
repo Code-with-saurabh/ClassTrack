@@ -1,33 +1,38 @@
 import { useMemo } from 'react';
 
+// Page numbers ki list banao — beech me "..." dikhata hai zyada pages par
+const buildPageItems = (totalPages, currentPage) => {
+  if (totalPages <= 1) return [1];
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+
+  const items = [];
+  const left = Math.max(1, currentPage - 2);
+  const right = Math.min(totalPages, currentPage + 2);
+
+  for (let i = 1; i < left; i += 1) items.push(i);
+  if (left > 2) items[items.length - 1] = '...';
+  for (let i = left; i <= right; i += 1) items.push(i);
+  if (right < totalPages - 1) items[items.length - 1] = '...';
+  for (let i = right + 1; i <= totalPages; i += 1) items.push(i);
+
+  return items;
+};
+
 const Pagination = ({ current = 1, total = 0, perPage = 8, onPageChange, className = '' }) => {
   const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / (Number(perPage) || 8)));
   const safeCurrent = Math.min(Math.max(1, Number(current) || 1), totalPages);
 
-  const items = useMemo(() => {
-    if (totalPages <= 1) return [1];
-    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
-    const pages = [];
-    const left = Math.max(1, safeCurrent - 2);
-    const right = Math.min(totalPages, safeCurrent + 2);
-    for (let i = 1; i < left; i += 1) pages.push(i);
-    if (left > 2) pages[pages.length - 1] = '...';
-    for (let i = left; i <= right; i += 1) pages.push(i);
-    if (right < totalPages - 1) pages[pages.length - 1] = '...';
-    for (let i = right + 1; i <= totalPages; i += 1) pages.push(i);
-    return pages;
-  }, [totalPages, safeCurrent]);
+  const items = useMemo(() => buildPageItems(totalPages, safeCurrent), [totalPages, safeCurrent]);
 
   const goTo = (page) => {
-    const p = Number(page);
-    if (
-      typeof onPageChange === 'function' &&
-      !Number.isNaN(p) &&
-      p >= 1 &&
-      p <= totalPages &&
-      p !== safeCurrent
-    ) {
-      onPageChange(p);
+    const target = Number(page);
+    const canChange = typeof onPageChange === 'function';
+    const isValid = !Number.isNaN(target) && target >= 1 && target <= totalPages;
+
+    if (canChange && isValid && target !== safeCurrent) {
+      onPageChange(target);
     }
   };
 
@@ -44,14 +49,15 @@ const Pagination = ({ current = 1, total = 0, perPage = 8, onPageChange, classNa
       >
         &laquo;
       </button>
-      {items.map((item, idx) =>
+
+      {items.map((item, index) =>
         item === '...' ? (
-          <span key={`e${idx}`} className="page-ellipsis">
+          <span key={`ellipsis-${index}`} className="page-ellipsis">
             &hellip;
           </span>
         ) : (
           <button
-            key={`p${item}-${idx}`}
+            key={`page-${item}-${index}`}
             type="button"
             className={`page-btn ${item === safeCurrent ? 'active' : ''}`}
             onClick={() => goTo(item)}
@@ -61,6 +67,7 @@ const Pagination = ({ current = 1, total = 0, perPage = 8, onPageChange, classNa
           </button>
         )
       )}
+
       <button
         type="button"
         className="page-btn"

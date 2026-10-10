@@ -18,6 +18,8 @@ const NOTIF_ICONS = {
   info: 'ℹ️',
 };
 
+const UNREAD_POLL_MS = 45000;
+
 const NotificationBell = () => {
   const [count, setCount] = useState(0);
   const [open, setOpen] = useState(false);
@@ -26,82 +28,84 @@ const NotificationBell = () => {
   const bellRef = useRef(null);
   const navigate = useNavigate();
 
+  // Har 45 second me unread count update hota hai (chup-chaap, error toast nahi)
   const refreshCount = () => {
     getUnreadCount()
       .then(({ data }) => setCount(data.data?.count || 0))
-      .catch((err) => {
-        if (err?.response?.status !== 401) {
-          // silent-ish: avoid spamming every 45s
-        }
-      });
+      .catch(() => {});
   };
 
   useEffect(() => {
     refreshCount();
-    const timer = setInterval(refreshCount, 45000);
+    const timer = setInterval(refreshCount, UNREAD_POLL_MS);
     return () => clearInterval(timer);
   }, []);
 
+  // Bahar click karne par dropdown band
   useEffect(() => {
-    const onDocClick = (e) => {
-      if (bellRef.current && !bellRef.current.contains(e.target)) {
+    const onDocumentClick = (event) => {
+      if (bellRef.current && !bellRef.current.contains(event.target)) {
         setOpen(false);
       }
     };
-    document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
+    document.addEventListener('mousedown', onDocumentClick);
+    return () => document.removeEventListener('mousedown', onDocumentClick);
   }, []);
 
-  const toggle = async () => {
-    const next = !open;
-    setOpen(next);
-    if (next) {
-      setLoading(true);
-      try {
-        const { data } = await getNotifications({ limit: 20 });
-        setItems(data.data || []);
-        refreshCount();
-      } catch (err) {
-        setItems([]);
-        toastError(err, 'Failed to load notifications');
-      } finally {
-        setLoading(false);
-      }
+  const toggleDropdown = async () => {
+    const willOpen = !open;
+    setOpen(willOpen);
+    if (!willOpen) return;
+
+    setLoading(true);
+    try {
+      const { data } = await getNotifications({ limit: 20 });
+      setItems(data.data || []);
+      refreshCount();
+    } catch (error) {
+      setItems([]);
+      toastError(error, 'Failed to load notifications');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleItemClick = async (n) => {
-    if (!n.read) {
+  const handleItemClick = async (notification) => {
+    if (!notification.read) {
       try {
-        await markAsRead(n._id);
-        setItems((prev) => prev.map((it) => (it._id === n._id ? { ...it, read: true } : it)));
-        setCount((c) => Math.max(0, c - 1));
-      } catch (err) {
-        toastError(err, 'Failed to mark notification as read');
+        await markAsRead(notification._id);
+        setItems((prev) =>
+          prev.map((item) => (item._id === notification._id ? { ...item, read: true } : item))
+        );
+        setCount((current) => Math.max(0, current - 1));
+      } catch (error) {
+        toastError(error, 'Failed to mark notification as read');
       }
     }
+
     setOpen(false);
-    if (n.link) navigate(n.link);
+    if (notification.link) navigate(notification.link);
   };
 
   const handleMarkAll = async () => {
     if (items.every((n) => n.read) || count === 0) {
-      toast.success('You are already all caught up!');
+      toast.success('You are already all caught up!', { id: 'caught-up' });
       return;
     }
+
     try {
       await markAllRead();
       setCount(0);
-      setItems((prev) => prev.map((it) => ({ ...it, read: true })));
-      toast.success('All notifications marked as read.');
-    } catch (err) {
-      toastError(err, 'Failed to mark all as read');
+      setItems((prev) => prev.map((item) => ({ ...item, read: true })));
+      toast.success('All notifications marked as read.', { id: 'all-read' });
+    } catch (error) {
+      toastError(error, 'Failed to mark all as read');
     }
   };
 
   return (
     <div className="notif-bell" ref={bellRef}>
-      <button className="notif-bell-btn" onClick={toggle} aria-label="Notifications">
+      <button className="notif-bell-btn" onClick={toggleDropdown} aria-label="Notifications">
         <span className="notif-bell-icon">🔔</span>
         {count > 0 && <span className="notif-badge">{count > 99 ? '99+' : count}</span>}
       </button>
@@ -118,25 +122,26 @@ const NotificationBell = () => {
               Mark all read
             </button>
           </div>
+
           <div className="notif-list">
             {loading ? (
               <div className="notif-empty">Loading…</div>
             ) : items.length === 0 ? (
               <div className="notif-empty">You're all caught up 🎉</div>
             ) : (
-              items.map((n) => (
+              items.map((notification) => (
                 <button
-                  key={n._id}
-                  className={`notif-item ${n.read ? '' : 'unread'}`}
-                  onClick={() => handleItemClick(n)}
+                  key={notification._id}
+                  className={`notif-item ${notification.read ? '' : 'unread'}`}
+                  onClick={() => handleItemClick(notification)}
                 >
-                  <span className={`notif-icon notif-${n.type}`}>
-                    {NOTIF_ICONS[n.type] || NOTIF_ICONS.info}
+                  <span className={`notif-icon notif-${notification.type}`}>
+                    {NOTIF_ICONS[notification.type] || NOTIF_ICONS.info}
                   </span>
                   <span className="notif-body">
-                    <span className="notif-text">{n.title}</span>
-                    {n.body && <span className="notif-sub">{n.body}</span>}
-                    <span className="notif-time">{formatNotificationTime(n.createdAt)}</span>
+                    <span className="notif-text">{notification.title}</span>
+                    {notification.body && <span className="notif-sub">{notification.body}</span>}
+                    <span className="notif-time">{formatNotificationTime(notification.createdAt)}</span>
                   </span>
                 </button>
               ))
@@ -148,6 +153,7 @@ const NotificationBell = () => {
   );
 };
 
+// Har role ka sidebar menu
 const NAV_GROUPS = {
   student: [
     { section: 'Main', items: [{ path: '/student', label: 'Dashboard', icon: '📊' }] },
@@ -193,6 +199,7 @@ const NAV_GROUPS = {
   ],
 };
 
+// Topbar breadcrumb ka label
 const CRUMB_LABELS = {
   '/student': 'Dashboard',
   '/student/timetable': 'Timetable',
@@ -212,12 +219,15 @@ const CRUMB_LABELS = {
   '/admin/report': 'Attendance Report',
 };
 
+const roleLabel = (role) => role?.charAt(0).toUpperCase() + role?.slice(1);
+
 const Layout = ({ children }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // Page change par mobile menu band
   useEffect(() => {
     setMenuOpen(false);
   }, [location.pathname]);
@@ -235,6 +245,7 @@ const Layout = ({ children }) => {
       <button className="menu-toggle" onClick={() => setMenuOpen((v) => !v)} aria-label="Toggle navigation">
         {menuOpen ? '✕' : '☰'}
       </button>
+
       <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-brand">
           <div className="sidebar-logo">
@@ -269,9 +280,7 @@ const Layout = ({ children }) => {
             <div className="user-avatar small">{user?.name?.charAt(0)?.toUpperCase()}</div>
             <div className="sidebar-user-meta">
               <span className="sidebar-user-name">{user?.name}</span>
-              <span className="sidebar-user-role">
-                {user?.role?.charAt(0).toUpperCase() + user?.role?.slice(1)}
-              </span>
+              <span className="sidebar-user-role">{roleLabel(user?.role)}</span>
             </div>
             <button className="sidebar-logout" onClick={handleLogout} title="Logout" aria-label="Logout">
               ⏻
@@ -279,6 +288,7 @@ const Layout = ({ children }) => {
           </div>
         </div>
       </aside>
+
       {menuOpen && <div className="sidebar-backdrop" onClick={() => setMenuOpen(false)}></div>}
 
       <main className="main-content">
@@ -291,15 +301,14 @@ const Layout = ({ children }) => {
             </div>
             <h2 className="page-title">Welcome, {user?.name?.split(' ')[0]} 👋</h2>
           </div>
+
           <div className="user-info">
             <NotificationBell />
             <div className="user-chip">
               <div className="user-avatar">{user?.name?.charAt(0)?.toUpperCase()}</div>
               <div className="user-chip-meta">
                 <span className="user-chip-name">{user?.name}</span>
-                <span className="user-chip-role">
-                  {user?.role?.charAt(0).toUpperCase() + user?.role?.slice(1)}
-                </span>
+                <span className="user-chip-role">{roleLabel(user?.role)}</span>
               </div>
             </div>
             <button className="btn-logout" onClick={handleLogout}>
@@ -307,6 +316,7 @@ const Layout = ({ children }) => {
             </button>
           </div>
         </div>
+
         {children}
       </main>
     </div>

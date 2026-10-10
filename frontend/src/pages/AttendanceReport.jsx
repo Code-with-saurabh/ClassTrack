@@ -4,7 +4,29 @@ import { getClassReport } from '../services/attendanceService';
 import { getFacultySubjects } from '../services/facultyService';
 import { getAllSubjects } from '../services/subjectService';
 import { getAttendanceColor } from '../utils/helpers';
+import Pagination from '../components/Pagination';
+import usePagination from '../hooks/usePagination';
 import { toastError, toastSuccess, toastValidation, getApiErrorMessage } from '../utils/toastHelpers';
+
+const PER_PAGE = 10;
+
+// Min/Max % ki validation — galat ho to message return karo
+const validateRange = (min, max) => {
+  const minNumber = min === '' ? null : Number(min);
+  const maxNumber = max === '' ? null : Number(max);
+
+  if (minNumber !== null && (minNumber < 0 || minNumber > 100)) {
+    return 'Min % must be between 0 and 100.';
+  }
+  if (maxNumber !== null && (maxNumber < 0 || maxNumber > 100)) {
+    return 'Max % must be between 0 and 100.';
+  }
+  if (minNumber !== null && maxNumber !== null && minNumber > maxNumber) {
+    return 'Min % cannot be greater than Max %.';
+  }
+
+  return null;
+};
 
 const AttendanceReport = () => {
   const { user } = useAuth();
@@ -18,9 +40,11 @@ const AttendanceReport = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Admin → saare subjects; Faculty → sirf assigned subjects
   useEffect(() => {
-    const load = user?.role === 'admin' ? getAllSubjects() : getFacultySubjects();
-    load
+    const loadSubjects = user?.role === 'admin' ? getAllSubjects() : getFacultySubjects();
+
+    loadSubjects
       .then(({ data }) => {
         setSubjects(data.data || []);
         if (data.data?.length) {
@@ -32,24 +56,19 @@ const AttendanceReport = () => {
       .catch((err) => toastError(err, 'Failed to load subjects'));
   }, [user]);
 
+  // Subject / filter change par report load karo
   useEffect(() => {
     if (!subjectId) return;
-    const minN = min === '' ? null : Number(min);
-    const maxN = max === '' ? null : Number(max);
-    if (minN !== null && (minN < 0 || minN > 100)) {
-      toastValidation('Min % must be between 0 and 100.');
+
+    const rangeError = validateRange(min, max);
+    if (rangeError) {
+      toastValidation(rangeError);
       return;
     }
-    if (maxN !== null && (maxN < 0 || maxN > 100)) {
-      toastValidation('Max % must be between 0 and 100.');
-      return;
-    }
-    if (minN !== null && maxN !== null && minN > maxN) {
-      toastValidation('Min % cannot be greater than Max %.');
-      return;
-    }
+
     setLoading(true);
     setError('');
+
     getClassReport({ subjectId, min: min || undefined, max: max || undefined, sortBy, order })
       .then(({ data }) => setReport(data.data))
       .catch((err) => {
@@ -60,7 +79,13 @@ const AttendanceReport = () => {
       .finally(() => setLoading(false));
   }, [subjectId, min, max, sortBy, order]);
 
+  const handlePrint = () => {
+    toastSuccess('Opening print dialog — choose "Save as PDF" to export.');
+    setTimeout(() => window.print(), 300);
+  };
+
   const stats = report?.stats;
+  const { page, setPage, total, pageItems } = usePagination(report?.students || [], PER_PAGE);
 
   return (
     <div>
@@ -76,7 +101,7 @@ const AttendanceReport = () => {
         <div className="toolbar-row">
           <div className="form-group" style={{ margin: 0 }}>
             <label>Subject</label>
-            <select value={subjectId || ''} onChange={(e) => setSubjectId(e.target.value)}>
+            <select value={subjectId || ''} onChange={(e) => { setSubjectId(e.target.value); setPage(1); }}>
               <option value="">Choose a subject</option>
               {subjects.map((s) => (
                 <option key={s._id} value={s._id}>
@@ -85,6 +110,7 @@ const AttendanceReport = () => {
               ))}
             </select>
           </div>
+
           <div className="form-group" style={{ margin: 0, width: '110px' }}>
             <label>Min %</label>
             <input
@@ -93,9 +119,10 @@ const AttendanceReport = () => {
               max="100"
               placeholder="0"
               value={min}
-              onChange={(e) => setMin(e.target.value)}
+              onChange={(e) => { setMin(e.target.value); setPage(1); }}
             />
           </div>
+
           <div className="form-group" style={{ margin: 0, width: '110px' }}>
             <label>Max %</label>
             <input
@@ -104,27 +131,27 @@ const AttendanceReport = () => {
               max="100"
               placeholder="100"
               value={max}
-              onChange={(e) => setMax(e.target.value)}
+              onChange={(e) => { setMax(e.target.value); setPage(1); }}
             />
           </div>
+
           <div className="form-group" style={{ margin: 0 }}>
             <label>Sort By</label>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+            <select value={sortBy} onChange={(e) => { setSortBy(e.target.value); setPage(1); }}>
               <option value="percentage">Percentage</option>
               <option value="rollNumber">Roll Number</option>
             </select>
           </div>
+
           <div className="form-group" style={{ margin: 0 }}>
             <label>Order</label>
-            <select value={order} onChange={(e) => setOrder(e.target.value)}>
+            <select value={order} onChange={(e) => { setOrder(e.target.value); setPage(1); }}>
               <option value="asc">Ascending</option>
               <option value="desc">Descending</option>
             </select>
           </div>
-          <button className="btn btn-secondary" onClick={() => {
-            toastSuccess('Opening print dialog — choose "Save as PDF" to export.');
-            setTimeout(() => window.print(), 300);
-          }} disabled={!report}>
+
+          <button className="btn btn-secondary" onClick={handlePrint} disabled={!report}>
             Download PDF
           </button>
         </div>
@@ -165,6 +192,7 @@ const AttendanceReport = () => {
               <h3>Class Performance</h3>
               <span className="badge badge-secondary">{report.students.length} student(s)</span>
             </div>
+
             <div className="table-container">
               <table>
                 <thead>
@@ -178,9 +206,9 @@ const AttendanceReport = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {report.students.map((item, index) => (
+                  {pageItems.map((item, index) => (
                     <tr key={item.student?._id}>
-                      <td>{index + 1}</td>
+                      <td>{(page - 1) * PER_PAGE + index + 1}</td>
                       <td>{item.student?.rollNumber}</td>
                       <td>{item.student?.userId?.name}</td>
                       <td>{item.present}</td>
@@ -203,6 +231,8 @@ const AttendanceReport = () => {
                 </tbody>
               </table>
             </div>
+
+            <Pagination current={page} total={total} perPage={PER_PAGE} onPageChange={setPage} />
           </div>
         </>
       )}

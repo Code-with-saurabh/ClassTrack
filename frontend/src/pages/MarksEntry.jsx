@@ -2,8 +2,12 @@ import { useState, useEffect } from 'react';
 import { getFacultySubjects } from '../services/facultyService';
 import { getAttendanceAnalytics } from '../services/attendanceService';
 import { createMarks } from '../services/marksService';
-import toast from 'react-hot-toast';
+import Pagination from '../components/Pagination';
+import usePagination from '../hooks/usePagination';
 import { toastError, toastSuccess, toastValidation, getApiErrorMessage } from '../utils/toastHelpers';
+
+const EXAM_TYPES = ['Mid-term', 'Assignment', 'Quiz'];
+const PER_PAGE = 10;
 
 const MarksEntry = () => {
   const [subjects, setSubjects] = useState([]);
@@ -17,7 +21,7 @@ const MarksEntry = () => {
   const [message, setMessage] = useState({ type: '', text: '' });
 
   useEffect(() => {
-    const fetchSubjects = async () => {
+    const loadSubjects = async () => {
       try {
         const { data } = await getFacultySubjects();
         setSubjects(data.data);
@@ -28,23 +32,32 @@ const MarksEntry = () => {
         setLoading(false);
       }
     };
-    fetchSubjects();
+
+    loadSubjects();
   }, []);
 
+  // Subject select karne par uski class ki student list load karo
   const handleSubjectChange = async (subjectId) => {
     setSelectedSubject(subjectId);
+
     if (!subjectId) {
       setStudents([]);
       setMarksData({});
       return;
     }
+
     try {
       const { data } = await getAttendanceAnalytics({ subjectId, filter: 'all' });
-      setStudents(data.data.students);
-      const initial = {};
-      data.data.students.forEach(s => { initial[s.student?._id] = ''; });
-      setMarksData(initial);
-      toastSuccess(`Class loaded: ${data.data.students.length} students.`);
+      const studentList = data.data.students;
+      setStudents(studentList);
+
+      const emptyMarks = {};
+      studentList.forEach((item) => {
+        emptyMarks[item.student?._id] = '';
+      });
+      setMarksData(emptyMarks);
+
+      toastSuccess(`Class loaded: ${studentList.length} students.`);
     } catch (error) {
       console.error('Error fetching students:', error);
       toastError(error, 'Failed to load class students');
@@ -53,39 +66,53 @@ const MarksEntry = () => {
     }
   };
 
+  const handleMarksChange = (studentId, value) => {
+    const max = parseInt(maximumMarks, 10);
+    const isEmpty = value === '';
+    const inRange = parseInt(value, 10) >= 0 && parseInt(value, 10) <= max;
+
+    if (isEmpty || inRange) {
+      setMarksData({ ...marksData, [studentId]: value });
+    }
+  };
+
   const handleSubmit = async () => {
     if (!selectedSubject) {
       toastValidation('Please select a subject first.');
       return;
     }
+
     const max = parseInt(maximumMarks, 10);
     if (!max || max < 1) {
       toastValidation('Maximum marks must be at least 1.');
       return;
     }
+
     setSubmitting(true);
     setMessage({ type: '', text: '' });
 
     try {
-      const entries = Object.entries(marksData).filter(([, value]) => value !== '');
-      if (entries.length === 0) {
+      // Sirf unhi students ke marks bhejo jinke boxes bhare hain
+      const filledEntries = Object.entries(marksData).filter(([, value]) => value !== '');
+
+      if (filledEntries.length === 0) {
         toastValidation('Please enter marks for at least one student.');
         setMessage({ type: 'error', text: 'Please enter marks for at least one student' });
         setSubmitting(false);
         return;
       }
 
-      const invalid = entries.find(([, v]) => {
-        const n = parseInt(v, 10);
-        return Number.isNaN(n) || n < 0 || n > max;
+      const hasInvalid = filledEntries.some(([, value]) => {
+        const marks = parseInt(value, 10);
+        return Number.isNaN(marks) || marks < 0 || marks > max;
       });
-      if (invalid) {
+      if (hasInvalid) {
         toastValidation(`Marks must be between 0 and ${max}.`);
         setSubmitting(false);
         return;
       }
 
-      const marksArray = entries.map(([studentId, marksObtained]) => ({
+      const marksArray = filledEntries.map(([studentId, marksObtained]) => ({
         studentId,
         subjectId: selectedSubject,
         examType,
@@ -93,6 +120,7 @@ const MarksEntry = () => {
         maximumMarks: max,
       }));
 
+      // Ek-ek karke save (backend upsert karta hai)
       for (const marks of marksArray) {
         await createMarks(marks);
       }
@@ -100,6 +128,7 @@ const MarksEntry = () => {
       const successMsg = `Marks saved for ${marksArray.length} students!`;
       setMessage({ type: 'success', text: successMsg });
       toast.success(successMsg);
+
       setTimeout(() => {
         setMessage({ type: '', text: '' });
         setMarksData({});
@@ -112,6 +141,8 @@ const MarksEntry = () => {
       setSubmitting(false);
     }
   };
+
+  const { page, setPage, total: studentTotal, pageItems: studentPage } = usePagination(students, PER_PAGE);
 
   if (loading) {
     return (
@@ -145,14 +176,16 @@ const MarksEntry = () => {
               ))}
             </select>
           </div>
+
           <div className="form-group">
             <label>Exam Type</label>
             <select value={examType} onChange={(e) => setExamType(e.target.value)}>
-              <option value="Mid-term">Mid-term</option>
-              <option value="Assignment">Assignment</option>
-              <option value="Quiz">Quiz</option>
+              {EXAM_TYPES.map((type) => (
+                <option key={type} value={type}>{type}</option>
+              ))}
             </select>
           </div>
+
           <div className="form-group">
             <label>Maximum Marks</label>
             <input
@@ -170,6 +203,7 @@ const MarksEntry = () => {
           <div className="card-header">
             <h3>Enter Marks</h3>
           </div>
+
           <div className="table-container">
             <table>
               <thead>
@@ -180,7 +214,7 @@ const MarksEntry = () => {
                 </tr>
               </thead>
               <tbody>
-                {students.map((item) => (
+                {studentPage.map((item) => (
                   <tr key={item.student?._id}>
                     <td>{item.student?.rollNumber}</td>
                     <td>{item.student?.userId?.name}</td>
@@ -190,12 +224,7 @@ const MarksEntry = () => {
                         min="0"
                         max={maximumMarks}
                         value={marksData[item.student?._id] || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          if (value === '' || (parseInt(value) >= 0 && parseInt(value) <= parseInt(maximumMarks))) {
-                            setMarksData({ ...marksData, [item.student?._id]: value });
-                          }
-                        }}
+                        onChange={(e) => handleMarksChange(item.student?._id, e.target.value)}
                         placeholder="Enter marks"
                         style={{ width: '120px' }}
                       />
@@ -205,6 +234,8 @@ const MarksEntry = () => {
               </tbody>
             </table>
           </div>
+
+          <Pagination current={page} total={studentTotal} perPage={PER_PAGE} onPageChange={setPage} />
 
           <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
             <button

@@ -2,8 +2,70 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getAttendanceByDate } from '../services/attendanceService';
 import { getAllSubjects } from '../services/subjectService';
+import Pagination from '../components/Pagination';
+import usePagination from '../hooks/usePagination';
 import { todayKey, formatDate } from '../utils/helpers';
 import { toastError, toastSuccess, toastValidation, toastWarning, getApiErrorMessage } from '../utils/toastHelpers';
+
+const PER_PAGE = 5;
+const STUDENTS_PER_PAGE = 10;
+
+// Pichle 14 din ki list (quick-pick dropdown ke liye)
+const buildRecentDays = () => {
+  const days = [];
+  const today = new Date();
+
+  for (let i = 0; i < 14; i += 1) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    days.push(date);
+  }
+
+  return days;
+};
+
+const LectureStudentsTable = ({ students }) => {
+  const { page, setPage, total, pageItems } = usePagination(students, STUDENTS_PER_PAGE);
+
+  return (
+    <>
+      <div className="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Roll No.</th>
+              <th>Student Name</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageItems.map((student, index) => (
+              <tr key={student._id}>
+                <td>{(page - 1) * STUDENTS_PER_PAGE + index + 1}</td>
+                <td>{student.rollNumber}</td>
+                <td>{student.userId?.name}</td>
+                <td>
+                  {student.attendance === 'unmarked' ? (
+                    <span className="badge badge-secondary">Unmarked</span>
+                  ) : (
+                    <span
+                      className={`badge ${student.attendance === 'present' ? 'badge-success' : 'badge-danger'}`}
+                    >
+                      {student.attendance}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <Pagination current={page} total={total} perPage={STUDENTS_PER_PAGE} onPageChange={setPage} />
+    </>
+  );
+};
 
 const AttendanceByDate = () => {
   const { user } = useAuth();
@@ -14,6 +76,7 @@ const AttendanceByDate = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Admin ke liye subject dropdown
   useEffect(() => {
     if (user?.role === 'admin') {
       getAllSubjects()
@@ -22,20 +85,24 @@ const AttendanceByDate = () => {
     }
   }, [user]);
 
-  const fetchReport = async (d, subj) => {
-    if (!d) {
+  const fetchReport = async (targetDate, subject) => {
+    if (!targetDate) {
       toastValidation('Please select a date.');
       return;
     }
+
     setLoading(true);
     setError('');
+
     try {
-      const params = { date: d };
-      if (subj) params.subjectId = subj;
+      const params = { date: targetDate };
+      if (subject) params.subjectId = subject;
+
       const { data } = await getAttendanceByDate(params);
       setReport(data.data);
+
       if ((data.data?.lectures || []).length === 0) {
-        toastWarning(`No lectures scheduled on ${formatDate(d)}.`);
+        toastWarning(`No lectures scheduled on ${formatDate(targetDate)}.`);
       }
     } catch (err) {
       const msg = getApiErrorMessage(err, 'Failed to load register');
@@ -47,10 +114,23 @@ const AttendanceByDate = () => {
     }
   };
 
+  const {
+    page,
+    setPage,
+    total: lectureTotal,
+    pageItems: lecturePage,
+  } = usePagination(report?.lectures || [], PER_PAGE);
+
   useEffect(() => {
     fetchReport(date, subjectId);
+    setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, subjectId]);
+
+  const handlePrint = () => {
+    toastSuccess('Opening print dialog — choose "Save as PDF" to export.');
+    setTimeout(() => window.print(), 300);
+  };
 
   return (
     <div>
@@ -72,34 +152,27 @@ const AttendanceByDate = () => {
               aria-label="Quick pick a recent date"
             >
               <option value="">Pick a recent date...</option>
-              {(() => {
-                const days = [];
-                const today = new Date();
-                for (let i = 0; i < 14; i += 1) {
-                  const d = new Date(today);
-                  d.setDate(d.getDate() - i);
-                  days.push(d);
-                }
-                return days.map((d) => {
-                  const key = d.toISOString().slice(0, 10);
-                  const label = d.toLocaleDateString(undefined, {
-                    weekday: 'short',
-                    day: 'numeric',
-                    month: 'short',
-                  });
-                  return (
-                    <option key={key} value={key}>
-                      {label} ({key})
-                    </option>
-                  );
+              {buildRecentDays().map((day) => {
+                const key = day.toISOString().slice(0, 10);
+                const label = day.toLocaleDateString(undefined, {
+                  weekday: 'short',
+                  day: 'numeric',
+                  month: 'short',
                 });
-              })()}
+                return (
+                  <option key={key} value={key}>
+                    {label} ({key})
+                  </option>
+                );
+              })}
             </select>
           </div>
+
           <div className="form-group" style={{ margin: 0 }}>
             <label>Date</label>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </div>
+
           {user?.role === 'admin' && (
             <div className="form-group" style={{ margin: 0 }}>
               <label>Subject</label>
@@ -113,10 +186,8 @@ const AttendanceByDate = () => {
               </select>
             </div>
           )}
-          <button className="btn btn-secondary" onClick={() => {
-            toastSuccess('Opening print dialog — choose "Save as PDF" to export.');
-            setTimeout(() => window.print(), 300);
-          }}>
+
+          <button className="btn btn-secondary" onClick={handlePrint}>
             Download PDF
           </button>
         </div>
@@ -159,7 +230,7 @@ const AttendanceByDate = () => {
               </div>
             </div>
           ) : (
-            report.lectures.map((lecture) => (
+            lecturePage.map((lecture) => (
               <div className="card" key={lecture._id} style={{ marginBottom: '1.5rem' }}>
                 <div className="card-header">
                   <div>
@@ -176,38 +247,13 @@ const AttendanceByDate = () => {
                   </span>
                 </div>
 
-                <div className="table-container">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Roll No.</th>
-                        <th>Student Name</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {lecture.students.map((student) => (
-                        <tr key={student._id}>
-                          <td>{student.rollNumber}</td>
-                          <td>{student.userId?.name}</td>
-                          <td>
-                            {student.attendance === 'unmarked' ? (
-                              <span className="badge badge-secondary">Unmarked</span>
-                            ) : (
-                              <span
-                                className={`badge ${student.attendance === 'present' ? 'badge-success' : 'badge-danger'}`}
-                              >
-                                {student.attendance}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <LectureStudentsTable students={lecture.students} />
               </div>
             ))
+          )}
+
+          {report.lectures.length > 0 && (
+            <Pagination current={page} total={lectureTotal} perPage={PER_PAGE} onPageChange={setPage} />
           )}
         </>
       )}

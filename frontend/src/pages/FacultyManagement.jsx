@@ -1,8 +1,176 @@
 import { useState, useEffect } from 'react';
 import { getAllFaculty, createFaculty, updateFaculty } from '../services/facultyService';
 import { getAllSubjects } from '../services/subjectService';
-import toast from 'react-hot-toast';
-import { toastError, toastValidation } from '../utils/toastHelpers';
+import Pagination from '../components/Pagination';
+import usePagination from '../hooks/usePagination';
+import { toastError, toastValidation, toastSuccess } from '../utils/toastHelpers';
+
+const PER_PAGE = 10;
+
+const emptyForm = () => ({
+  name: '',
+  email: '',
+  password: '',
+  employeeId: '',
+  department: 'Computer Science',
+  assignedSubjects: [],
+});
+
+const FacultyFormModal = ({ faculty, subjects, onClose, onSaved }) => {
+  const [formData, setFormData] = useState(emptyForm());
+  const [saving, setSaving] = useState(false);
+
+  // Edit mode me existing data bharo
+  useEffect(() => {
+    if (faculty) {
+      setFormData({
+        name: faculty.userId?.name || '',
+        email: faculty.userId?.email || '',
+        password: '',
+        employeeId: faculty.employeeId,
+        department: faculty.department,
+        assignedSubjects: faculty.assignedSubjects?.map((s) => s._id || s) || [],
+      });
+    }
+  }, [faculty]);
+
+  const updateField = (field, value) => setFormData({ ...formData, [field]: value });
+
+  const validateForm = () => {
+    if (!formData.name.trim()) {
+      toastValidation('Name is required.');
+      return false;
+    }
+    if (!/^\S+@\S+\.\S+$/.test(formData.email.trim())) {
+      toastValidation('A valid email is required.');
+      return false;
+    }
+    if (!faculty && formData.password.length < 6) {
+      toastValidation('Password must be at least 6 characters.');
+      return false;
+    }
+    if (!formData.employeeId.trim()) {
+      toastValidation('Employee ID is required.');
+      return false;
+    }
+    return true;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!validateForm()) return;
+
+    setSaving(true);
+
+    try {
+      if (faculty) {
+        await updateFaculty(faculty._id, formData);
+        toastSuccess('Faculty updated successfully.');
+      } else {
+        await createFaculty(formData);
+        toastSuccess('Faculty created successfully.');
+      }
+
+      onSaved();
+    } catch (error) {
+      toastError(error, 'Failed to save faculty');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Multi-select: Ctrl/Cmd dabakar options choose karne hain
+  const handleSubjectsChange = (e) => {
+    const values = Array.from(e.target.selectedOptions, (o) => o.value);
+    updateField('assignedSubjects', values);
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{faculty ? 'Edit Faculty' : 'Add Faculty'}</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Name</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => updateField('name', e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>Email</label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => updateField('email', e.target.value)}
+                required
+              />
+            </div>
+          </div>
+
+          {!faculty && (
+            <div className="form-group">
+              <label>Password</label>
+              <input
+                type="password"
+                value={formData.password}
+                onChange={(e) => updateField('password', e.target.value)}
+                required
+              />
+            </div>
+          )}
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Employee ID</label>
+              <input
+                type="text"
+                value={formData.employeeId}
+                onChange={(e) => updateField('employeeId', e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>Department</label>
+              <input
+                type="text"
+                value={formData.department}
+                onChange={(e) => updateField('department', e.target.value)}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>Assigned Subjects</label>
+            <select multiple value={formData.assignedSubjects} onChange={handleSubjectsChange}>
+              {subjects.map((s) => (
+                <option key={s._id} value={s._id}>{s.name} ({s.code})</option>
+              ))}
+            </select>
+            <small style={{ color: 'var(--text-secondary)' }}>Hold Ctrl/Cmd to select multiple</small>
+          </div>
+
+          <div className="modal-actions">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving...' : faculty ? 'Update' : 'Create'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
 
 const FacultyManagement = () => {
   const [faculty, setFaculty] = useState([]);
@@ -11,9 +179,6 @@ const FacultyManagement = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingFaculty, setEditingFaculty] = useState(null);
   const [search, setSearch] = useState('');
-  const [formData, setFormData] = useState({
-    name: '', email: '', password: '', employeeId: '', department: 'Computer Science', assignedSubjects: []
-  });
 
   const fetchData = async () => {
     try {
@@ -21,78 +186,69 @@ const FacultyManagement = () => {
       setFaculty(facultyRes.data.data);
       setSubjects(subjectsRes.data.data);
     } catch (error) {
-      console.error('Error fetching data:', error);
       toastError(error, 'Failed to load faculty');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-  const validateForm = () => {
-    if (!formData.name.trim()) { toastValidation('Name is required.'); return false; }
-    if (!/^\S+@\S+\.\S+$/.test(formData.email.trim())) { toastValidation('A valid email is required.'); return false; }
-    if (!editingFaculty && formData.password.length < 6) { toastValidation('Password must be at least 6 characters.'); return false; }
-    if (!formData.employeeId.trim()) { toastValidation('Employee ID is required.'); return false; }
-    return true;
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!validateForm()) return;
-    try {
-      if (editingFaculty) {
-        await updateFaculty(editingFaculty._id, formData);
-        toast.success('Faculty updated successfully.');
-      } else {
-        await createFaculty(formData);
-        toast.success('Faculty created successfully.');
-      }
-      setShowModal(false);
-      setEditingFaculty(null);
-      setFormData({ name: '', email: '', password: '', employeeId: '', department: 'Computer Science', assignedSubjects: [] });
-      fetchData();
-    } catch (error) {
-      console.error('Error saving faculty:', error);
-      toastError(error, 'Failed to save faculty');
-    }
-  };
-
-  const handleEdit = (f) => {
-    setEditingFaculty(f);
-    setFormData({
-      name: f.userId?.name || '',
-      email: f.userId?.email || '',
-      password: '',
-      employeeId: f.employeeId,
-      department: f.department,
-      assignedSubjects: f.assignedSubjects?.map(s => s._id || s) || []
-    });
+  const openAddModal = () => {
+    setEditingFaculty(null);
     setShowModal(true);
   };
 
-  const filteredFaculty = faculty.filter(f =>
-    f.employeeId?.includes(search) ||
-    f.userId?.name?.toLowerCase().includes(search.toLowerCase())
+  const handleEdit = (item) => {
+    setEditingFaculty(item);
+    setShowModal(true);
+  };
+
+  const handleSaved = () => {
+    setShowModal(false);
+    setEditingFaculty(null);
+    fetchData();
+  };
+
+  const filteredFaculty = faculty.filter(
+    (f) =>
+      f.employeeId?.includes(search) ||
+      f.userId?.name?.toLowerCase().includes(search.toLowerCase())
   );
 
+  const { page, setPage, total, pageItems } = usePagination(filteredFaculty, PER_PAGE);
+
   if (loading) {
-    return <div className="loading-container"><div className="spinner"></div><p>Loading faculty...</p></div>;
+    return (
+      <div className="loading-container">
+        <div className="spinner"></div>
+        <p>Loading faculty...</p>
+      </div>
+    );
   }
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <h2>Faculty Management</h2>
-        <button className="btn btn-primary" onClick={() => { setEditingFaculty(null); setShowModal(true); }}>
+        <button className="btn btn-primary" onClick={openAddModal}>
           + Add Faculty
         </button>
       </div>
 
       <div className="card">
         <div className="search-input">
-          <input type="text" placeholder="Search by name or employee ID..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input
+            type="text"
+            placeholder="Search by name or employee ID..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+          />
         </div>
 
         <div className="table-container">
@@ -109,77 +265,39 @@ const FacultyManagement = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredFaculty.map((f) => (
-                <tr key={f._id}>
-                  <td>{f.employeeId}</td>
-                  <td>{f.userId?.name}</td>
-                  <td>{f.userId?.email}</td>
-                  <td>{f.department}</td>
-                  <td>{f.assignedSubjects?.map(s => s.name || s).join(', ') || 'None'}</td>
-                  <td><span className={`badge ${f.userId?.status === 'active' ? 'badge-success' : 'badge-danger'}`}>{f.userId?.status}</span></td>
+              {pageItems.map((item) => (
+                <tr key={item._id}>
+                  <td>{item.employeeId}</td>
+                  <td>{item.userId?.name}</td>
+                  <td>{item.userId?.email}</td>
+                  <td>{item.department}</td>
+                  <td>{item.assignedSubjects?.map((s) => s.name || s).join(', ') || 'None'}</td>
                   <td>
-                    <button className="btn btn-sm btn-secondary" onClick={() => handleEdit(f)}>Edit</button>
+                    <span className={`badge ${item.userId?.status === 'active' ? 'badge-success' : 'badge-danger'}`}>
+                      {item.userId?.status}
+                    </span>
+                  </td>
+                  <td>
+                    <button className="btn btn-sm btn-secondary" onClick={() => handleEdit(item)}>
+                      Edit
+                    </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+
+        <Pagination current={page} total={total} perPage={PER_PAGE} onPageChange={setPage} />
       </div>
 
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{editingFaculty ? 'Edit Faculty' : 'Add Faculty'}</h3>
-              <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
-            </div>
-            <form onSubmit={handleSubmit}>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Name</label>
-                  <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
-                </div>
-                <div className="form-group">
-                  <label>Email</label>
-                  <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required />
-                </div>
-              </div>
-              {!editingFaculty && (
-                <div className="form-group">
-                  <label>Password</label>
-                  <input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} required />
-                </div>
-              )}
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Employee ID</label>
-                  <input type="text" value={formData.employeeId} onChange={(e) => setFormData({ ...formData, employeeId: e.target.value })} required />
-                </div>
-                <div className="form-group">
-                  <label>Department</label>
-                  <input type="text" value={formData.department} onChange={(e) => setFormData({ ...formData, department: e.target.value })} required />
-                </div>
-              </div>
-              <div className="form-group">
-                <label>Assigned Subjects</label>
-                <select multiple value={formData.assignedSubjects} onChange={(e) => {
-                  const values = Array.from(e.target.selectedOptions, o => o.value);
-                  setFormData({ ...formData, assignedSubjects: values });
-                }}>
-                  {subjects.map((s) => (
-                    <option key={s._id} value={s._id}>{s.name} ({s.code})</option>
-                  ))}
-                </select>
-                <small style={{ color: 'var(--text-secondary)' }}>Hold Ctrl/Cmd to select multiple</small>
-              </div>
-              <div className="modal-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">{editingFaculty ? 'Update' : 'Create'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <FacultyFormModal
+          faculty={editingFaculty}
+          subjects={subjects}
+          onClose={() => setShowModal(false)}
+          onSaved={handleSaved}
+        />
       )}
     </div>
   );

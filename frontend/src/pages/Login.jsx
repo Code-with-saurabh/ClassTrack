@@ -5,6 +5,18 @@ import { login } from '../services/authService';
 import toast from 'react-hot-toast';
 import { toastError, toastValidation, toastSuccess } from '../utils/toastHelpers';
 
+const HOME_BY_ROLE = {
+  admin: '/admin',
+  faculty: '/faculty',
+  student: '/student',
+};
+
+const DEMO_ACCOUNTS = [
+  { label: 'Admin', email: 'admin@classtrack.com', password: 'admin123' },
+  { label: 'Faculty', email: 'hem@classtrack.com', password: 'faculty123' },
+  { label: 'Student', email: 'student1@classtrack.com', password: 'student123' },
+];
+
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -13,51 +25,53 @@ const Login = () => {
   const { loginUser } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
+  const showError = (message) => {
+    setError(message);
+    toastValidation(message);
+  };
+
+  const validate = () => {
     if (!email.trim() || !password) {
-      const msg = 'Please enter your email and password.';
-      setError(msg);
-      toastValidation(msg);
-      return;
+      showError('Please enter your email and password.');
+      return false;
     }
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-      const msg = 'Please enter a valid email address.';
-      setError(msg);
-      toastValidation(msg);
-      return;
+      showError('Please enter a valid email address.');
+      return false;
     }
     if (password.length < 6) {
-      const msg = 'Password must be at least 6 characters.';
-      setError(msg);
-      toastValidation(msg);
-      return;
+      showError('Password must be at least 6 characters.');
+      return false;
     }
+    return true;
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError('');
+
+    if (!validate()) return;
     setLoading(true);
 
     try {
       const { data } = await login({ email, password });
       loginUser(data.data);
 
-      const role = data.data.user.role;
       toastSuccess('Signed in successfully!');
-      if (role === 'admin') navigate('/admin');
-      else if (role === 'faculty') navigate('/faculty');
-      else navigate('/student');
+      navigate(HOME_BY_ROLE[data.data.user.role] || '/student');
     } catch (err) {
-      const msg = err.response?.data?.message || 'Login failed';
-      setError(msg);
+      const message = err.response?.data?.message || 'Login failed';
+      setError(message);
       toastError(err, 'Login failed');
     } finally {
       setLoading(false);
     }
   };
 
-  const fillDemo = (demoEmail, demoPassword, label) => {
-    setEmail(demoEmail);
-    setPassword(demoPassword);
-    toast.success(`${label} credentials filled. Click Sign in.`);
+  const fillDemo = (account) => {
+    setEmail(account.email);
+    setPassword(account.password);
+    toast.success(`${account.label} credentials filled. Click Sign in.`, { id: 'fill-credentials' });
   };
 
   return (
@@ -134,18 +148,16 @@ const Login = () => {
 
           <div className="login-demo">
             <p className="login-demo-title">Demo credentials</p>
-            <button className="login-demo-row" onClick={() => fillDemo('admin@classtrack.com', 'admin123', 'Admin')}>
-              <span>Admin</span>
-              <code>admin@classtrack.com / admin123</code>
-            </button>
-            <button className="login-demo-row" onClick={() => fillDemo('saurabh@classtrack.com', 'faculty123', 'Faculty')}>
-              <span>Faculty</span>
-              <code>saurabh@classtrack.com / faculty123</code>
-            </button>
-            <button className="login-demo-row" onClick={() => fillDemo('student1@classtrack.com', 'student123', 'Student')}>
-              <span>Student</span>
-              <code>student1@classtrack.com / student123</code>
-            </button>
+            {DEMO_ACCOUNTS.map((account) => (
+              <button
+                key={account.label}
+                className="login-demo-row"
+                onClick={() => fillDemo(account)}
+              >
+                <span>{account.label}</span>
+                <code>{account.email} / {account.password}</code>
+              </button>
+            ))}
           </div>
         </div>
       </div>

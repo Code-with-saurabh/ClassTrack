@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getStudentMarks } from '../services/marksService';
+import Pagination from '../components/Pagination';
+import usePagination from '../hooks/usePagination';
 import { toastError } from '../utils/toastHelpers';
+
+const PER_PAGE = 10;
 
 const StudentMarks = () => {
   const { user } = useAuth();
@@ -9,7 +13,7 @@ const StudentMarks = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchMarks = async () => {
+    const loadMarks = async () => {
       try {
         const { data } = await getStudentMarks(user?.id || user?.profile?.userId);
         setMarks(data.data);
@@ -20,8 +24,11 @@ const StudentMarks = () => {
         setLoading(false);
       }
     };
-    fetchMarks();
+
+    loadMarks();
   }, [user]);
+
+  const { page, setPage, total, pageItems } = usePagination(marks, PER_PAGE);
 
   if (loading) {
     return (
@@ -60,8 +67,10 @@ const StudentMarks = () => {
                 </tr>
               </thead>
               <tbody>
-                {marks.map((mark) => {
+                {pageItems.map((mark) => {
                   const percentage = Math.round((mark.marksObtained / mark.maximumMarks) * 100);
+                  const isPass = percentage >= 50;
+
                   return (
                     <tr key={mark._id}>
                       <td>{mark.subject?.name}</td>
@@ -69,12 +78,12 @@ const StudentMarks = () => {
                       <td>{mark.examType}</td>
                       <td style={{ fontWeight: 600 }}>{mark.marksObtained}</td>
                       <td>{mark.maximumMarks}</td>
-                      <td style={{ fontWeight: 600, color: percentage >= 50 ? 'var(--success)' : 'var(--danger)' }}>
+                      <td style={{ fontWeight: 600, color: isPass ? 'var(--success)' : 'var(--danger)' }}>
                         {percentage}%
                       </td>
                       <td>
-                        <span className={`badge ${percentage >= 50 ? 'badge-success' : 'badge-danger'}`}>
-                          {percentage >= 50 ? 'Pass' : 'Fail'}
+                        <span className={`badge ${isPass ? 'badge-success' : 'badge-danger'}`}>
+                          {isPass ? 'Pass' : 'Fail'}
                         </span>
                       </td>
                     </tr>
@@ -83,6 +92,10 @@ const StudentMarks = () => {
               </tbody>
             </table>
           </div>
+        )}
+
+        {marks.length > 0 && (
+          <Pagination current={page} total={total} perPage={PER_PAGE} onPageChange={setPage} />
         )}
       </div>
     </div>

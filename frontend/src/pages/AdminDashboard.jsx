@@ -14,17 +14,18 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const loadStats = async () => {
       try {
         const [studentsRes, facultyRes, subjectsRes] = await Promise.all([
           getAllStudents(),
           getAllFaculty(),
-          getAllSubjects()
+          getAllSubjects(),
         ]);
+
         setStats({
           students: studentsRes.data.data.length,
           faculty: facultyRes.data.data.length,
-          subjects: subjectsRes.data.data.length
+          subjects: subjectsRes.data.data.length,
         });
       } catch (error) {
         console.error('Error fetching stats:', error);
@@ -33,7 +34,8 @@ const AdminDashboard = () => {
         setLoading(false);
       }
     };
-    fetchStats();
+
+    loadStats();
   }, []);
 
   if (loading) {
@@ -47,7 +49,7 @@ const AdminDashboard = () => {
 
   return (
     <div>
-      <div className="card" style={{ marginBottom: '1.5rem', background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', color: 'white' }}>
+      <div className="card hero-card" style={{ marginBottom: '1.5rem' }}>
         <h2 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>
           {getGreeting()}, {user?.name?.split(' ')[0]}
         </h2>

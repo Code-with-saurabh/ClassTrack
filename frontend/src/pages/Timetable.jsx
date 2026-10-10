@@ -2,6 +2,28 @@ import { useState, useEffect } from 'react';
 import { getTodayTimetable, getAllTimetable } from '../services/timetableService';
 import { toastError } from '../utils/toastHelpers';
 
+const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// Weekly view ke liye entries ko day ke hisaab se group karo (time ke order me)
+const groupByDay = (entries) => {
+  const grouped = {};
+  WEEK_DAYS.forEach((day) => {
+    grouped[day] = [];
+  });
+
+  entries.forEach((entry) => {
+    if (grouped[entry.day]) {
+      grouped[entry.day].push(entry);
+    }
+  });
+
+  Object.keys(grouped).forEach((day) => {
+    grouped[day].sort((a, b) => a.startTime.localeCompare(b.startTime));
+  });
+
+  return grouped;
+};
+
 const Timetable = () => {
   const [todayTimetable, setTodayTimetable] = useState([]);
   const [weeklyTimetable, setWeeklyTimetable] = useState({});
@@ -9,26 +31,15 @@ const Timetable = () => {
   const [view, setView] = useState('today');
 
   useEffect(() => {
-    const fetchTimetable = async () => {
+    const loadTimetable = async () => {
       try {
         const [todayRes, weeklyRes] = await Promise.all([
           getTodayTimetable(),
-          getAllTimetable()
+          getAllTimetable(),
         ]);
-        setTodayTimetable(todayRes.data.data);
 
-        const grouped = {};
-        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-        days.forEach(day => { grouped[day] = []; });
-        weeklyRes.data.data.forEach(entry => {
-          if (grouped[entry.day]) {
-            grouped[entry.day].push(entry);
-          }
-        });
-        Object.keys(grouped).forEach(day => {
-          grouped[day].sort((a, b) => a.startTime.localeCompare(b.startTime));
-        });
-        setWeeklyTimetable(grouped);
+        setTodayTimetable(todayRes.data.data);
+        setWeeklyTimetable(groupByDay(weeklyRes.data.data));
       } catch (error) {
         console.error('Error fetching timetable:', error);
         toastError(error, 'Failed to load timetable');
@@ -36,7 +47,8 @@ const Timetable = () => {
         setLoading(false);
       }
     };
-    fetchTimetable();
+
+    loadTimetable();
   }, []);
 
   if (loading) {

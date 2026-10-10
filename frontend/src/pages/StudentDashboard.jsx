@@ -15,15 +15,17 @@ const StudentDashboard = () => {
   const [marks, setMarks] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Dashboard ke saare data ek saath load karo
   useEffect(() => {
-    const fetchData = async () => {
+    const loadDashboard = async () => {
       try {
         const [profileRes, timetableRes, attendanceRes, marksRes] = await Promise.all([
           getStudentProfile(),
           getTodayTimetable(),
           getStudentAttendance(user?.id || user?.profile?.userId),
-          getStudentMarks(user?.id || user?.profile?.userId)
+          getStudentMarks(user?.id || user?.profile?.userId),
         ]);
+
         setProfile(profileRes.data.data);
         setTimetable(timetableRes.data.data);
         setAttendance(attendanceRes.data.data);
@@ -35,11 +37,13 @@ const StudentDashboard = () => {
         setLoading(false);
       }
     };
-    fetchData();
+
+    loadDashboard();
   }, [user]);
 
-  const lowAttendance = attendance.subjectWise?.filter(s => s.percentage < 75) || [];
+  const lowAttendance = attendance.subjectWise?.filter((s) => s.percentage < 75) || [];
 
+  // Low attendance ho to ek warning toast dikhao
   useEffect(() => {
     if (!loading && lowAttendance.length > 0) {
       toastWarning(`⚠️ Low attendance in ${lowAttendance.length} subject(s). Please improve!`);
@@ -58,7 +62,7 @@ const StudentDashboard = () => {
 
   return (
     <div>
-      <div className="card" style={{ marginBottom: '1.5rem', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
+      <div className="card hero-card" style={{ marginBottom: '1.5rem' }}>
         <h2 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>
           {getGreeting()}, {user?.name?.split(' ')[0]}
         </h2>
