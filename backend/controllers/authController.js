@@ -3,10 +3,11 @@ const User = require('../models/User');
 const Student = require('../models/Student');
 const Faculty = require('../models/Faculty');
 const asyncHandler = require('../middleware/asyncHandler');
+const env = require('../config/env');
 const { sendData, sendCreated, sendError } = require('../utils/response');
 
 const generateToken = (userId) => {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRE });
+  return jwt.sign({ id: userId }, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRE });
 };
 
 const loadProfileByRole = async (user) => {

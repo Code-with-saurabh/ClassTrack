@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+const env = require('./config/env');
 
 const User = require('./models/User');
 const Student = require('./models/Student');
@@ -441,7 +442,7 @@ async function seedNotifications({ admin, subjects, students, facultyProfiles, t
 // ---------- main ----------
 async function main() {
   try {
-    await mongoose.connect(process.env.MONGO_URI);
+    await mongoose.connect(env.MONGO_URI);
     console.log(`Connected to MongoDB (${mongoose.connection.name})`);
 
     await resetDatabase();
